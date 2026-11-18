@@ -1,0 +1,30 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Spike contract: three deliberate patterns for the attack engine to find.
+//   register(): unsalted hash of a low-entropy PIN goes public  -> A1 + A2 (recoverable)
+//               salted commitment of the same PIN goes public   -> A1 only (not recoverable)
+//   vote():     the hidden choice decides which counter moves   -> A1 + A5 (choice leaks)
+
+export ledger pin_hash: Bytes<32>;
+export ledger pin_commit: Bytes<32>;
+export ledger yes_votes: Counter;
+export ledger no_votes: Counter;
+
+witness secret_pin(): Bytes<32>;
+witness pin_salt(): Bytes<32>;
+witness vote_choice(): Boolean;
+
+export circuit register(): [] {
+  pin_hash = disclose(persistentHash<Bytes<32>>(secret_pin()));
+  pin_commit = persistentCommit<Bytes<32>>(secret_pin(), pin_salt());
+}
+
+export circuit vote(): [] {
+  if (disclose(vote_choice())) {
+    yes_votes.increment(1);
+  } else {
+    no_votes.increment(1);
+  }
+}

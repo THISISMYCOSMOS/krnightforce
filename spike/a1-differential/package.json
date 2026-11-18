@@ -1,0 +1,12 @@
+{
+  "name": "spike-a1-differential",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "compact compile --skip-zk contract/vault.compact managed/vault",
+    "spike": "node spike.mjs"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.21.0"
+  }
+}
