@@ -1,5 +1,5 @@
 ---
-name: proof-kit:proof-attack
+name: proof:proof-attack
 description: Use when checking whether values a Compact (Midnight) contract means to hide really stay hidden on chain — running privacy attack tests, reading proof-kit engine results, drawing the privacy map, or answering "does this contract leak X?". Verdicts come only from executing the contract in the local simulator.
 version: 0.0.1
 ---
@@ -11,7 +11,7 @@ The proof-kit engine runs a compiled Compact contract in the local simulator and
 ## When NOT to use
 
 - Access-control and witness-trust audits (`ownPublicKey()` gating, unchecked witnesses, missing authorization): use `compact-core:audit-compact`.
-- Deciding what to hide or how to fix a leak: use `proof-kit:proof-spec` (design guide and fix patterns).
+- Deciding what to hide or how to fix a leak: use `proof:proof-spec` (design guide and fix patterns).
 - Fee addresses, unshielded tokens, network metadata, wallets, proving servers: out of scope. Say so.
 - Compile errors about `disclose()`: that is the compiler's job; fix the compile first.
 
@@ -29,19 +29,29 @@ The proof-kit engine runs a compiled Compact contract in the local simulator and
 
 ```bash
 compact compile --skip-zk <contract.compact> <out-dir>
-npx --no-install proof-kit attack <out-dir> --source <contract.compact> --json
+npx --no-install proofkit attack <out-dir> --source <contract.compact> --json
 ```
 
 ## Reading the JSON
 
-Each finding has `circuit`, `input` (the hidden input varied), `attack` (`A1`, `A2`, `A5`), `verdict`, `location` (`value`, `path` or `result`) and `test` (the reproducing test name). See `references/verdicts.md` for every verdict.
+The report has `units` (one per circuit, plus `<constructor>`). Each unit has `status` (`tested` or `untestable` with a `reason`) and `inputs`. Each input has `input` (`witness:<name>` or `arg:<name>`, struct fields as `.field`), `type`, `entropy`, `status`, and `findings`. Each finding has:
+
+- `kind`: `EXPOSED`, `RECOVERABLE`, `PARTIAL`, `TAG`, `MASKED`
+- `where`: `value`, `path`, `ledger` (constructor state) or `result` (return value)
+- `location`: transcript op index (`op 3`), ledger cell (`cell 1`), `shape` or `result`
+- `attack`: `A1`, `A2` or `A5`
+- `onChain`, `failure`, `detail`, `evidence`
+
+Only `failure: true` counts. See `references/verdicts.md`.
 
 Report in this order:
 
-1. Failures: `EXPOSED`, `RECOVERABLE`, `PARTIAL`. One line each: circuit, hidden input, verdict, location, test name.
-2. `UNTESTABLE`: circuit and reason.
+1. Failures: circuit, input, kind, where/location, detail.
+2. Untestable units and inputs, with the engine's reason.
 3. Passes: counts only.
-4. Files written: `attack-plan.md`, `proof-attack.test.ts`, `privacy-baseline.json`.
+4. Files written (planned: `attack-plan.md`, `proof-attack.test.ts`, `privacy-baseline.json`).
+
+> Status: the engine writes the JSON and text report today. The test file, attack plan, baseline and `accept` are planned (see `docs/plan.md`).
 
 ## Baseline (ratchet)
 

@@ -1,11 +1,11 @@
 ---
-name: proof-kit:attack
-description: Run privacy attack tests on a Compact contract by executing it in the local simulator (A1 exposure, A2 recovery, A5 path). Writes attack-plan.md, proof-attack.test.ts and privacy-baseline.json. Verdicts come only from the engine output.
+name: proof:attack
+description: Run privacy attack tests on a Compact contract by executing it in the local simulator (A1 exposure, A2 recovery, A5 path). Writing attack-plan.md, proof-attack.test.ts and privacy-baseline.json is planned. Verdicts come only from the engine output.
 allowed-tools: Bash, Read, Glob, Grep, Write
 argument-hint: "[path/to/contract.compact]"
 ---
 
-Run privacy attack tests on a Compact contract. Load the `proof-kit:proof-attack` skill first and follow its rules.
+Run privacy attack tests on a Compact contract. Load the `proof:proof-attack` skill first and follow its rules.
 
 ## Step 1: Find the contract
 
@@ -28,7 +28,7 @@ If compilation fails, report the compiler error and stop. Do not guess what the 
 ## Step 3: Run the engine
 
 ```bash
-npx --no-install proof-kit attack <out-dir> --source <contract.compact> --json
+npx --no-install proofkit attack <out-dir> --source <contract.compact> --json
 ```
 
 If the engine is not installed, tell the user how to install it and stop. Do not run attacks by hand and do not judge results yourself.
@@ -37,8 +37,8 @@ If the engine is not installed, tell the user how to install it and stop. Do not
 
 Read the JSON. Report exactly what it says:
 
-- failures (`EXPOSED`, `RECOVERABLE`, `PARTIAL`) with circuit, hidden input and the reproducing test name
+- failures (`EXPOSED`, `RECOVERABLE`, `PARTIAL`) with circuit, hidden input, kind, where/location and detail
 - `UNTESTABLE` circuits with the engine's reason
 - the list of files written
 
-Never add findings the engine did not report, never call something "suspected", and never upgrade or downgrade a verdict. For fixes, use the `proof-kit:proof-spec` skill (fix patterns, pitfalls first).
+Never add findings the engine did not report, never call something "suspected", and never upgrade or downgrade a verdict. For fixes, use the `proof:proof-spec` skill (fix patterns, pitfalls first).

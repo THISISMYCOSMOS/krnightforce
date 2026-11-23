@@ -1,16 +1,16 @@
 ---
-name: proof-kit:proof-spec
+name: proof:proof-spec
 description: Use when designing a Compact (Midnight) contract's privacy before or while writing it — deciding which values stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input — or when a proof-kit attack test failed and a fix pattern is needed. Writes the leakage description (privacy-spec.json) that the attack tests check.
 version: 0.0.1
 ---
 
 # Proof Kit: privacy design guide
 
-A contract is two things (Kachina): what it does, and what it reveals. This skill helps the user write down what it reveals, as a leakage description the user agrees to. The attack tests (`proof-kit:proof-attack`) then check that the contract reveals nothing outside it. The full guide is `docs/design-guide.md` in the proof-kit repo.
+A contract is two things (Kachina): what it does, and what it reveals. This skill helps the user write down what it reveals, as a leakage description the user agrees to. The attack tests (`proof:proof-attack`) then check that the contract reveals nothing outside it. The full guide is `docs/design-guide.md` in the proof-kit repo.
 
 ## When NOT to use
 
-- Running or reading attack tests: use `proof-kit:proof-attack`.
+- Running or reading attack tests: use `proof:proof-attack`.
 - Access-control audits beyond "who vouches for this input": use `compact-core:audit-compact`.
 - Compile errors about `disclose()`: fix the compile first; the compiler is right to ask.
 - Wallets, proving servers, fees, unshielded tokens, network metadata: out of scope. Say so.

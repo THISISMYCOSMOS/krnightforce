@@ -1,6 +1,6 @@
 # Bench
 
-`proofkit bench` measures whether the engine is good enough to propose upstream (midnight-expert). It is run locally; the report `bench-report.md` goes into the PR description.
+`proofkit bench` (planned; see `docs/plan.md` section 9) measures whether the engine is good enough to propose upstream (midnight-expert). It is run locally; the report `bench-report.md` goes into the PR description.
 
 ## What lives here
 

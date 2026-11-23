@@ -13,14 +13,14 @@
 					"input": "witness:claim_age",
 					"attack": "A2",
 					"kind": "RECOVERABLE",
-					"location": "value"
+					"where": "value"
 				},
 				{
 					"circuit": "register",
 					"input": "witness:claim_condition",
 					"attack": "A2",
 					"kind": "RECOVERABLE",
-					"location": "value"
+					"where": "value"
 				}
 			],
 			"intendedDisclosures": [

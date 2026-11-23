@@ -13,7 +13,7 @@
 		"node": ">=22"
 	},
 	"bin": {
-		"proof-kit": "./dist/cli.js"
+		"proofkit": "./dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",

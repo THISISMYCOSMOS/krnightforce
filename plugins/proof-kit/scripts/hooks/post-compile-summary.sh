@@ -42,6 +42,6 @@ if ! pk_engine_available "$PROJECT_ROOT"; then
 fi
 
 # TODO(engine): compile the changed contract and run
-#   npx --no-install proof-kit attack <compiled-dir> --source "$FILE_PATH" --json --summary
+#   npx --no-install proofkit attack <compiled-dir> --source "$FILE_PATH" --json --summary
 # then print at most 3 lines (failures / untestable / passes) from the JSON.
 exit 0

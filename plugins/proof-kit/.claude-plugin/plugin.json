@@ -1,7 +1,7 @@
 {
-	"name": "proof-kit",
+	"name": "proof",
 	"version": "0.0.1",
-	"description": "Midnight Proof Kit: runs Compact contracts in the local simulator to test whether values meant to stay hidden really stay hidden on chain (exposure, recovery, linking, path attacks). Verdicts come from execution only.",
+	"description": "Midnight Proof Kit: runs Compact contracts in the local simulator to test whether values meant to stay hidden really stay hidden on chain (exposure, recovery and path attacks; linking planned). Verdicts come from execution only.",
 	"author": {
 		"name": "THISISMYCOSMOS"
 	},

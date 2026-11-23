@@ -1,5 +1,7 @@
 # Compact 개인정보 설계 가이드
 
+> 이 가이드가 왜 필요한지, 프로젝트 전체 기획과 진행 상황은 [plan.md](plan.md)에 있습니다.
+
 Compact 계약을 쓰기 전에 "무엇을 숨기고, 무엇을 드러내고, 누구를 믿는지"를 정하고, 그 결정이 코드에서 지켜지는지 공격 시험으로 확인하기 위한 가이드입니다. `/proof:spec`이 이 가이드를 따라 질문하고, `/proof:attack`이 결과를 확인하고, `/proof:map`이 확인된 결과를 그립니다.
 
 ## 0. 이 가이드의 뼈대
@@ -34,7 +36,7 @@ Compact 계약을 쓰기 전에 "무엇을 숨기고, 무엇을 드러내고, �
 
 - 공개 상태는 `export ledger`에 있는 것입니다. 모두가 봅니다.
 - 비공개 값은 witness와 회로 인자입니다. 컴파일러는 회로 인자도 witness처럼 다룹니다.
-- 회로의 반환값은 체인에 남지 않습니다. 트랜잭션에는 입력과 출력에 대한 커밋만 들어가고, 반환값은 호출한 DApp에만 갑니다.
+- 회로의 반환값은 체인에 남지 않습니다. 공식 문서(Security and best practices): "the transaction carries only a randomized commitment to the call's inputs and outputs". 반환값은 호출한 DApp이나 계약에만 갑니다.
 
 ## 2장. 무엇이 드러나도 되나 (누출 설명)
 
@@ -98,10 +100,13 @@ Compact 계약을 쓰기 전에 "무엇을 숨기고, 무엇을 드러내고, �
 ### 4.5 집단 안에 있다는 것만: 멤버십
 
 - Merkle 트리 멤버십으로 "등록된 사람 중 하나"만 증명합니다.
-- 함정(공식 문서): 집단이 작으면 숨는 의미가 없습니다("a tree with three leaves gives almost no privacy"). midnight-expert의 compact-privacy-disclosure 스킬은 `checkRoot` 결과를 분기에 쓰면 결과 비트가 기록에 남는다고 경고합니다.
+- 함정: 집단이 작으면 숨는 의미가 없습니다. 공식 문서(Security and best practices): "a tree with three leaves gives almost no privacy".
+- 함정: `checkRoot` 결과를 분기에 쓰면 결과 비트가 기록에 남습니다. 출처는 midnight-expert `plugins/compact-core/skills/compact-privacy-disclosure/SKILL.md`의 "checkRoot Publishes Its Result" 절이고, 직접 확인하지는 않았습니다.
 - 이 부품의 예제와 공격은 아직 없습니다.
 
 ## 5장. 맞게 됐는지 확인
+
+> **엔진 상태**: 아래 판정 규칙은 정해졌지만 엔진(0.0.1)에는 아직 들어가지 않았습니다. 지금 엔진은 `privacy-spec.json`을 읽지 않고, 직접 `disclose()`한 값도 실패로 냅니다. 그래서 공개 id나 "18세 이상" 같은 의도한 공개가 실패로 나옵니다. 지금 동작과 정한 규칙의 차이는 `plugins/proof-kit/skills/proof-attack/references/verdicts.md`에 있습니다. 엔진 반영은 [plan.md](plan.md)의 다음 작업 1번입니다.
 
 Kachina가 말한 대로 누출 설명은 정확해야 합니다. 그래서 확인 규칙은 하나입니다. **누출 설명(2장)에 적지 않은 것이 실제로 드러나면 실패입니다.** 실제로 무엇이 드러나는지는 계약을 실행해서 확인합니다. 숨긴 값 하나만 바꿔 가며 여러 번 돌리고, 공개 기록이 어떻게 달라지는지 봅니다.
 
@@ -120,6 +125,10 @@ Kachina가 말한 대로 누출 설명은 정확해야 합니다. 그래서 확�
 
 설명 없이도 실패로 잡는 것은, 컴파일러가 개발자를 믿고 통과시키는 곳뿐입니다. 나머지는 개발자가 `disclose()`로 직접 선언한 것이라 공개로 칠합니다. 2장 설명을 쓰면 그 선언이 설계와 맞는지까지 확인합니다.
 
+이 규칙은 측정에서 나왔습니다. 최근 공개 레포 13개에서 엔진이 낸 실패 88건 중 87건이 의도한 공개였습니다. 진짜 구멍은 소금 없는 좌표 해시 1건이었습니다([plan.md](plan.md) "측정 요약").
+
+직접 `disclose()`인지, 해시·커밋을 거친 것인지는 소스를 읽지 않고 실행으로 구분합니다. 실행하는 동안 런타임의 해시·커밋 함수 출력을 기록해 두고, 달라진 공개 값이 그중 하나인지 봅니다.
+
 판정의 근거는 실행 결과뿐입니다. 이름이나 코드를 읽고 "의심"을 내지 않습니다. 통과는 "이 공격 목록에서 재현되지 않음"이지 "안전함"이 아닙니다.
 
 ### 색 (시각화)
@@ -127,14 +136,14 @@ Kachina가 말한 대로 누출 설명은 정확해야 합니다. 그래서 확�
 | 색 | 뜻 |
 | --- | --- |
 | 숨김 | 바꿔도 공개 기록이 그대로 |
-| 증명만 | 공개 기록에는 풀리지 않는 커밋·해시로만 남음 |
+| 증명만 | 공개 기록에는 풀리지 않는 커밋·해시로만 남음 (엔진 판정 `MASKED`, `TAG`) |
 | 공개 | 누출 설명에 있거나 코드가 직접 선언한 공개 |
 | 위험 | 실패 |
 | 회색 | 시험 못 함 |
 
 ### 누출 설명 파일 (`privacy-spec.json`)
 
-`/proof:spec`이 1~3장 답을 이 파일로 씁니다. 공격 엔진은 이 파일을 읽어 무엇을 숨긴 값으로 볼지와 값 범위를 정합니다. 파일이 없으면 이름과 타입으로 짐작합니다.
+`/proof:spec`이 1~3장 답을 이 파일로 씁니다. 공격 엔진은 이 파일을 읽어 무엇을 숨긴 값으로 볼지와 값 범위를 정합니다(엔진 반영 예정). 파일이 없으면 이름과 타입으로 짐작합니다. 형식의 자세한 설명은 `plugins/proof-kit/skills/proof-spec/references/privacy-spec.md`에 있습니다.
 
 ```json
 {
@@ -145,6 +154,9 @@ Kachina가 말한 대로 누출 설명은 정확해야 합니다. 그래서 확�
   "mayReveal": [
     { "circuit": "check", "input": "arg:id", "kind": "value", "why": "public lookup key" },
     { "circuit": "check", "input": "witness:holder_age", "kind": "fact", "fact": "holder_age >= 18", "why": "venue needs adults only" }
+  ],
+  "acceptedLeakage": [
+    "that check was called, and when"
   ],
   "unlinkable": [
     { "actions": ["vote", "vote"], "why": "same member in two polls" }
@@ -164,7 +176,11 @@ Compact 컴파일러 0.36.0(`--skip-zk`)으로 `disclose()` 없이 컴파일해 
 - 장부 연산이 있는 분기 조건: p02
 - 공개 회로 반환값: p03, p22
 - 다른 계약 호출 인자: p18
-- assert 메시지는 문자열 리터럴만 허용됩니다: p17
+
+그 밖에 확인한 것:
+- assert 메시지는 문자열 리터럴만 허용됩니다. 숨긴 값을 넣으면 공개 오류가 아니라 문법 오류가 납니다(p17, p17b, p17c). 그래서 메시지로 값이 새는 일은 0.36.0에서는 문법상 막혀 있습니다.
+- `disclose()`를 붙이면 통과합니다: 다른 계약 호출 인자(p18b).
+- assert 조건에 숨긴 값을 쓰는 것(p09), 커밋을 반환하는 것(p23), 커밋한 뒤 분기하는 것(p25)은 `disclose()` 없이 통과합니다.
 
 **통과시키는 것** (이 가이드의 함정):
 
@@ -182,6 +198,9 @@ Compact 컴파일러 0.36.0(`--skip-zk`)으로 `disclose()` 없이 컴파일해 
 - Kerber, Kiayias, Kohlweiss. "Kachina – Foundations of Private Smart Contracts." CSF 2021. https://drwx.org/papers/kachina.pdf
 - Bowe, Chiesa, Green, Miers, Mishra, Wu. "Zexe: Enabling Decentralized Private Computation." IEEE S&P 2020. https://eprint.iacr.org/2018/962
 - Kosba, Miller, Shi, Wen, Papamanthou. "Hawk: The Blockchain Model of Cryptography and Privacy-Preserving Smart Contracts." IEEE S&P 2016. https://eprint.iacr.org/2015/675
-- Midnight 공식 문서: Explicit disclosure ("Witness Protection Program"), Security and best practices, Smart contract security. https://docs.midnight.network
+- Midnight 공식 문서
+  - Security and best practices: https://docs.midnight.network/guides/security-best-practices
+  - Explicit disclosure ("Witness Protection Program"): https://docs.midnight.network/compact/reference/explicit-disclosure
+  - Smart contract security: https://docs.midnight.network/compact/smart-contract-security
 - midnight-expert (commit 1507772): compact-core `compact-security/references/threat-catalog.md`, `compact-review/references/privacy-review.md`, `compact-privacy-disclosure`
 - OpenZeppelin compact-contracts: `ZOwnablePK`

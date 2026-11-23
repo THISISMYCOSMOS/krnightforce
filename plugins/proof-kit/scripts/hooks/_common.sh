@@ -17,7 +17,7 @@
 # Sourced helper for proof-kit hooks.
 #   pk_windows_notice   prints a WSL notice and returns 0 on native Windows shells.
 #   pk_engine_available returns 0 when the proof-kit engine CLI is resolvable
-#                       from the project (npx --no-install proof-kit).
+#                       from the project (npx --no-install proofkit).
 
 pk_windows_notice() {
 	case "$(uname -s 2>/dev/null)" in
@@ -33,5 +33,5 @@ pk_engine_available() {
 	local root="$1"
 	[ -n "$root" ] || return 1
 	command -v node >/dev/null 2>&1 || return 1
-	[ -e "$root/node_modules/.bin/proof-kit" ]
+	[ -e "$root/node_modules/.bin/proofkit" ]
 }

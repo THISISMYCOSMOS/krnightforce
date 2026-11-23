@@ -12,6 +12,9 @@ The leakage description of one contract: what it may reveal. The attack engine r
     { "circuit": "check", "input": "arg:id", "kind": "value", "why": "public lookup key" },
     { "circuit": "check", "input": "witness:holder_age", "kind": "fact", "fact": "holder_age >= 18", "why": "only adults are allowed" }
   ],
+  "acceptedLeakage": [
+    "that check was called, and when"
+  ],
   "unlinkable": [
     { "actions": ["vote", "vote"], "why": "same member in two polls" }
   ],
@@ -23,6 +26,9 @@ The leakage description of one contract: what it may reveal. The attack engine r
 
 - `input`: `witness:<name>` or `arg:<name>`; struct fields as `witness:<name>.<field>`.
 - `range`: `lo..hi` for numbers, or `Boolean`. Used by the recovery attack.
-- `mayReveal.kind`: `value` (the value itself) or `fact` (only the condition in `fact`).
+- `mayReveal.kind`: `value` (the value itself), `fact` (only the condition in `fact`), or `path` (which ledger cell or branch the input selects, A5).
+- `acceptedLeakage`: unavoidable leakage the user accepts, in words (that an action happened, its time, group size). Not checked by the engine; it is part of the description the user agrees to.
+- `unlinkable`: pairs of actions that must not be linkable (checked by A3, planned).
+- `vouchedBy`: who vouches for each input (guide chapter 3). Not checked by the engine.
 - A finding on a hidden input fails unless `mayReveal` covers it for that circuit.
 - Engine support for reading this file is planned; the format is fixed first so scenarios can use it.

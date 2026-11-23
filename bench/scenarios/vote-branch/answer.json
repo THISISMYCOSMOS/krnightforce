@@ -13,8 +13,8 @@
 					"input": "witness:choice",
 					"attack": "A5",
 					"kind": "RECOVERABLE",
-					"location": "path",
-					"note": "fails only with privacy-spec.json"
+					"note": "fails only with privacy-spec.json",
+					"where": "path"
 				}
 			],
 			"intendedDisclosures": []

@@ -62,7 +62,7 @@
 								"input",
 								"attack",
 								"kind",
-								"location"
+								"where"
 							],
 							"additionalProperties": false,
 							"properties": {
@@ -71,7 +71,7 @@
 								},
 								"input": {
 									"type": "string",
-									"description": "Hidden input: witness name or circuit argument (circuit:arg)."
+									"description": "Hidden input as the engine names it: `witness:<name>` or `arg:<name>`; struct fields as `.field`."
 								},
 								"attack": {
 									"enum": [
@@ -87,17 +87,20 @@
 										"RECOVERABLE",
 										"PARTIAL",
 										"LINKABLE"
-									]
-								},
-								"location": {
-									"enum": [
-										"value",
-										"path",
-										"result"
-									]
+									],
+									"description": "LINKABLE is for A3 (linking), which the engine does not implement yet."
 								},
 								"note": {
 									"type": "string"
+								},
+								"where": {
+									"enum": [
+										"value",
+										"path",
+										"ledger",
+										"result"
+									],
+									"description": "Same as the engine's `where` field (the engine's `location` is the op/cell index and is not compared)."
 								}
 							}
 						}
@@ -117,7 +120,8 @@
 									"type": "string"
 								},
 								"input": {
-									"type": "string"
+									"type": "string",
+									"description": "`witness:<name>` or `arg:<name>`."
 								},
 								"reason": {
 									"type": "string"

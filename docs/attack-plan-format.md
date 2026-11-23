@@ -1,6 +1,8 @@
 # `attack-plan.md` format
 
-`/proof-kit:attack` writes one `attack-plan.md` per project next to the generated `proof-attack.test.ts`. It records what was attacked and why, so a reviewer can check the test design without reading the engine. Every verdict in it comes from execution.
+> Status: planned. The engine does not write this file yet (`docs/plan.md`, next task 4).
+
+`/proof:attack` writes one `attack-plan.md` per project next to the generated `proof-attack.test.ts`. It records what was attacked and why, so a reviewer can check the test design without reading the engine. Every verdict in it comes from execution.
 
 Template:
 
@@ -31,7 +33,7 @@ Template:
 
 | Circuit | Input | A1 exposure | A2 recovery | A5 path | Samples |
 | --- | --- | --- | --- | --- | --- |
-| `register` | `secret_pin` | run | run (10,000 guesses) | run | 8 |
+| `register` | `secret_pin` | run | run (up to 12,000 candidates) | run | 8 |
 
 ## Verdicts
 

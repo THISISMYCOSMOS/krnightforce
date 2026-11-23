@@ -13,8 +13,8 @@
 					"input": "witness:holder_age",
 					"attack": "A1",
 					"kind": "EXPOSED",
-					"location": "value",
-					"note": "fails only with privacy-spec.json: without it, a direct disclose() counts as a declared disclosure"
+					"note": "fails only with privacy-spec.json: without it, a direct disclose() counts as a declared disclosure",
+					"where": "value"
 				}
 			],
 			"intendedDisclosures": [

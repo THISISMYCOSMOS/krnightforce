@@ -13,7 +13,7 @@
 					"input": "witness:bid_amount",
 					"attack": "A2",
 					"kind": "RECOVERABLE",
-					"location": "value"
+					"where": "value"
 				}
 			],
 			"intendedDisclosures": []

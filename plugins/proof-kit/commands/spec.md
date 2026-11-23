@@ -1,13 +1,13 @@
 ---
-name: proof-kit:spec
+name: proof:spec
 description: Before (or after) writing a Compact contract, decide which values must stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input; write them as the leakage description (privacy-spec.json) that attack tests check, and give fix patterns when a test fails.
 allowed-tools: Read, Write, AskUserQuestion
 argument-hint: "[path/to/contract.compact]"
 ---
 
-Write a privacy spec for a Compact contract. Load the `proof-kit:proof-spec` skill first and follow it.
+Write a privacy spec for a Compact contract. Load the `proof:proof-spec` skill first and follow it.
 
-> Status: planned.
+> Status: the design guide (`docs/design-guide.md`) and the `proof:proof-spec` skill exist. The engine does not read `privacy-spec.json` yet (`docs/plan.md`, next task 1).
 
 ## Steps
 

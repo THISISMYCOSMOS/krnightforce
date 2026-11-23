@@ -19,7 +19,7 @@ import { attack } from "./attack.js";
 import { formatText } from "./format.js";
 import { loadCompiled } from "./harness.js";
 
-const USAGE = `usage: proof-kit attack <compiled-dir> [--source <file.compact>] [--json] [--out <file>]
+const USAGE = `usage: proofkit attack <compiled-dir> [--source <file.compact>] [--json] [--out <file>]
                          [--budget <n>] [--seed <n>] [--circuit <name>]...
 
 <compiled-dir> is the output directory given to \`compact compile\` (it holds contract/ and compiler/).
