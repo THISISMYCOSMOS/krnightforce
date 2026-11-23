@@ -1,0 +1,12 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fix: disclose only the fact the design needs.
+export ledger adults: Map<Bytes<32>, Boolean>;
+
+witness holder_age(): Uint<8>;
+
+export circuit check(id: Bytes<32>): [] {
+  adults.insert(disclose(id), disclose(holder_age() >= 18));
+}

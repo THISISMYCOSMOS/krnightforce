@@ -1,0 +1,5 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<8>;
+export ledger h: Bytes<32>;
+export circuit f(): [] { h = disclose(persistentHash<Uint<8>>(w())); }

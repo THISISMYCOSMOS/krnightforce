@@ -1,0 +1,18 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Pitfall: ownPublicKey() is a witness-like value the caller supplies, so it
+// cannot prove who is calling. Writing it to the ledger also links every action
+// by the same owner. Both compile without disclose().
+export ledger owner: ZswapCoinPublicKey;
+export ledger counter: Counter;
+
+constructor() {
+  owner = ownPublicKey();
+}
+
+export circuit bump(): [] {
+  assert(ownPublicKey() == owner, "not owner");
+  counter.increment(1);
+}

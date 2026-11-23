@@ -1,0 +1,14 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Hole: a commitment whose "random" argument is a constant. The compiler trusts
+// commitments to hide their value, so this compiles without disclose(), but the
+// result is as recoverable as a plain hash.
+export ledger sealed_bid: Bytes<32>;
+
+witness bid_amount(): Uint<16>;
+
+export circuit seal(): [] {
+  sealed_bid = persistentCommit<Uint<16>>(bid_amount(), pad(32, "auction-salt"));
+}

@@ -1,0 +1,47 @@
+{
+	"id": "predicate-disclosure",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/age.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "check",
+					"input": "witness:holder_age",
+					"attack": "A1",
+					"kind": "EXPOSED",
+					"location": "value",
+					"note": "fails only with privacy-spec.json: without it, a direct disclose() counts as a declared disclosure"
+				}
+			],
+			"intendedDisclosures": [
+				{
+					"circuit": "check",
+					"input": "arg:id",
+					"reason": "public lookup key"
+				}
+			]
+		},
+		{
+			"path": "fixed/age.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": [
+				{
+					"circuit": "check",
+					"input": "arg:id",
+					"reason": "public lookup key"
+				},
+				{
+					"circuit": "check",
+					"input": "witness:holder_age",
+					"reason": "fact holder_age >= 18 only"
+				}
+			]
+		}
+	]
+}

@@ -1,0 +1,14 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Pitfall: nobody vouches for the value. Any caller can register a credential
+// for any value, so a later proof about it proves nothing.
+export ledger credentials: Set<Bytes<32>>;
+
+witness claim_value(): Uint<8>;
+witness claim_nonce(): Bytes<32>;
+
+export circuit issueCredential(): [] {
+  credentials.insert(persistentCommit<Uint<8>>(claim_value(), claim_nonce()));
+}

@@ -1,0 +1,10 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<64>;
+witness wb(): Bytes<32>;
+witness salt(): Bytes<32>;
+witness wf(): Field;
+
+export ledger c1: Counter;
+export ledger c2: Counter;
+export circuit f(): [] { const h = persistentCommit<Uint<64>>(w(), salt()); if (h == pad(32, "a")) { c1.increment(1); } else { c2.increment(1); } }

@@ -1,0 +1,27 @@
+{
+	"contract": "age.compact",
+	"hidden": [
+		{
+			"input": "witness:holder_age",
+			"range": "0..120",
+			"why": "personal data"
+		}
+	],
+	"mayReveal": [
+		{
+			"circuit": "check",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public lookup key"
+		},
+		{
+			"circuit": "check",
+			"input": "witness:holder_age",
+			"kind": "fact",
+			"fact": "holder_age >= 18",
+			"why": "only adults are allowed"
+		}
+	],
+	"unlinkable": [],
+	"vouchedBy": []
+}

@@ -11,7 +11,7 @@ The proof-kit engine runs a compiled Compact contract in the local simulator and
 ## When NOT to use
 
 - Access-control and witness-trust audits (`ownPublicKey()` gating, unchecked witnesses, missing authorization): use `compact-core:audit-compact`.
-- Explaining how to fix a leak: use `compact-core:compact-privacy-disclosure`.
+- Deciding what to hide or how to fix a leak: use `proof-kit:proof-spec` (design guide and fix patterns).
 - Fee addresses, unshielded tokens, network metadata, wallets, proving servers: out of scope. Say so.
 - Compile errors about `disclose()`: that is the compiler's job; fix the compile first.
 

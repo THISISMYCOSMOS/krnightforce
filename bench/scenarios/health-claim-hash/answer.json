@@ -1,0 +1,48 @@
+{
+	"id": "health-claim-hash",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/claims.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "register",
+					"input": "witness:claim_age",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"location": "value"
+				},
+				{
+					"circuit": "register",
+					"input": "witness:claim_condition",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"location": "value"
+				}
+			],
+			"intendedDisclosures": [
+				{
+					"circuit": "register",
+					"input": "arg:id",
+					"reason": "public credential id"
+				}
+			]
+		},
+		{
+			"path": "fixed/claims.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": [
+				{
+					"circuit": "register",
+					"input": "arg:id",
+					"reason": "public credential id"
+				}
+			]
+		}
+	]
+}

@@ -1,0 +1,13 @@
+{
+	"contract": "bids.compact",
+	"hidden": [
+		{
+			"input": "witness:bid_amount",
+			"range": "0..65535",
+			"why": "sealed bid"
+		}
+	],
+	"mayReveal": [],
+	"unlinkable": [],
+	"vouchedBy": []
+}

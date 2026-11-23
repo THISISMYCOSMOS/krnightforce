@@ -1,0 +1,20 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Hole: the claim is hidden with a plain hash. The compiler accepts it, but age
+// and condition code have small ranges, so anyone can hash candidates until one
+// matches the public value.
+export ledger claims: Map<Bytes<32>, Bytes<32>>;
+
+witness claim_age(): Uint<8>;
+witness claim_condition(): Uint<8>;
+
+export circuit register(id: Bytes<32>): [] {
+  const h = persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "claim:"),
+    claim_age() as Field as Bytes<32>,
+    claim_condition() as Field as Bytes<32>
+  ]);
+  claims.insert(disclose(id), disclose(h));
+}

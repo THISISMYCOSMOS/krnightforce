@@ -1,0 +1,31 @@
+{
+	"contract": "claims.compact",
+	"hidden": [
+		{
+			"input": "witness:claim_age",
+			"range": "0..120",
+			"why": "health data"
+		},
+		{
+			"input": "witness:claim_condition",
+			"range": "0..255",
+			"why": "health data"
+		}
+	],
+	"mayReveal": [
+		{
+			"circuit": "register",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public credential id"
+		}
+	],
+	"unlinkable": [],
+	"vouchedBy": [
+		{
+			"input": "witness:claim_age",
+			"by": "issuer",
+			"how": "out of scope for this scenario"
+		}
+	]
+}

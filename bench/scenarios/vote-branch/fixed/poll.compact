@@ -1,0 +1,14 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fix: store a commitment to the choice; tally later by a reveal or a
+// separate private aggregation step.
+export ledger ballots: Set<Bytes<32>>;
+
+witness choice(): Boolean;
+witness ballot_nonce(): Bytes<32>;
+
+export circuit vote(): [] {
+  ballots.insert(persistentCommit<Boolean>(choice(), ballot_nonce()));
+}

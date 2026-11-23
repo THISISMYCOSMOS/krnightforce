@@ -1,0 +1,19 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fix: a commitment with a fresh random nonce. Without the nonce, a candidate
+// claim cannot be checked against the public value.
+export ledger claims: Map<Bytes<32>, Bytes<32>>;
+
+witness claim_age(): Uint<8>;
+witness claim_condition(): Uint<8>;
+witness claim_nonce(): Bytes<32>;
+
+export circuit register(id: Bytes<32>): [] {
+  const c = persistentCommit<Vector<2, Bytes<32>>>([
+    claim_age() as Field as Bytes<32>,
+    claim_condition() as Field as Bytes<32>
+  ], claim_nonce());
+  claims.insert(disclose(id), c);
+}

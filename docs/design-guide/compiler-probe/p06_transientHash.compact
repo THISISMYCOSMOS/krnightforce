@@ -1,0 +1,9 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<64>;
+witness wb(): Bytes<32>;
+witness salt(): Bytes<32>;
+witness wf(): Field;
+
+export ledger h: Field;
+export circuit f(): [] { h = transientHash<Field>(wf()); }

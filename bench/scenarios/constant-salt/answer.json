@@ -1,0 +1,29 @@
+{
+	"id": "constant-salt",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/bids.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "seal",
+					"input": "witness:bid_amount",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"location": "value"
+				}
+			],
+			"intendedDisclosures": []
+		},
+		{
+			"path": "fixed/bids.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": []
+		}
+	]
+}

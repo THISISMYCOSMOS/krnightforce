@@ -41,4 +41,4 @@ Read the JSON. Report exactly what it says:
 - `UNTESTABLE` circuits with the engine's reason
 - the list of files written
 
-Never add findings the engine did not report, never call something "suspected", and never upgrade or downgrade a verdict. For fixes, point to the `compact-core:compact-privacy-disclosure` skill.
+Never add findings the engine did not report, never call something "suspected", and never upgrade or downgrade a verdict. For fixes, use the `proof-kit:proof-spec` skill (fix patterns, pitfalls first).

@@ -1,0 +1,9 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<64>;
+witness wb(): Bytes<32>;
+witness salt(): Bytes<32>;
+witness wf(): Field;
+
+export sealed ledger x: Uint<64>;
+constructor(a: Uint<64>) { x = a; }

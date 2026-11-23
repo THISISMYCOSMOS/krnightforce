@@ -1,27 +1,18 @@
 ---
 name: proof-kit:spec
-description: Before (or after) writing a Compact contract, decide which values must stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input; turn the answers into attack-test settings. Fix patterns are delegated to compact-core:compact-privacy-disclosure. Planned.
+description: Before (or after) writing a Compact contract, decide which values must stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input; write them as the leakage description (privacy-spec.json) that attack tests check, and give fix patterns when a test fails.
 allowed-tools: Read, Write, AskUserQuestion
 argument-hint: "[path/to/contract.compact]"
 ---
 
-Write a privacy spec for a Compact contract. Load the `proof-kit:proof-attack` skill first.
+Write a privacy spec for a Compact contract. Load the `proof-kit:proof-spec` skill first and follow it.
 
 > Status: planned.
 
-## Step 1: Ask
+## Steps
 
-Ask the user, one short question each:
-
-1. Which values must stay hidden?
-2. Which facts about them may be revealed (for example "over 18", "bid placed")?
-3. Which actions must not be linkable to each other?
-4. Who vouches for each input (the user, an issuer's signature, the contract's own state)?
-
-## Step 2: Write settings
-
-Write the answers as engine settings (hidden inputs, value ranges, intended disclosures, unlinkable action pairs) next to the contract. These settings change which attacks run; they never change a verdict.
-
-## Step 3: When a test fails
-
-Do not explain fix patterns here. Point to the matching section of the `compact-core:compact-privacy-disclosure` skill (salted commitments, scoped nullifiers, round-based keys, selective disclosure), then rerun `/proof-kit:attack`.
+1. Describe what the contract does (skill step 1).
+2. Ask what may be revealed and what must not be linkable (skill step 2).
+3. Ask who vouches for each input (skill step 3).
+4. Write `privacy-spec.json` next to the contract and get the user's agreement (skill step 4).
+5. Run `/proof:attack`. For each failure, apply the matching fix pattern from the skill's `references/patterns.md` (pitfall first), then rerun (skill step 5).

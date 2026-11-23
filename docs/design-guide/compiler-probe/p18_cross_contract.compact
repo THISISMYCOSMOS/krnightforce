@@ -1,0 +1,12 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<64>;
+witness wb(): Bytes<32>;
+witness salt(): Bytes<32>;
+witness wf(): Field;
+
+contract Other {
+  circuit g(x: Uint<64>): [];
+}
+export ledger other: Other;
+export circuit f(): [] { other.g(w()); }

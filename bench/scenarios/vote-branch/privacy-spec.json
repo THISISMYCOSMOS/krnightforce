@@ -1,0 +1,13 @@
+{
+	"contract": "poll.compact",
+	"hidden": [
+		{
+			"input": "witness:choice",
+			"range": "Boolean",
+			"why": "secret ballot"
+		}
+	],
+	"mayReveal": [],
+	"unlinkable": [],
+	"vouchedBy": []
+}

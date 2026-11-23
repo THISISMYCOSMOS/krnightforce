@@ -1,0 +1,10 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<64>;
+witness wb(): Bytes<32>;
+witness salt(): Bytes<32>;
+witness wf(): Field;
+
+export ledger m: Map<Uint<64>, Uint<64>>;
+export ledger out: Counter;
+export circuit f(): [] { const v = m.lookup(w()); out.increment(1); }

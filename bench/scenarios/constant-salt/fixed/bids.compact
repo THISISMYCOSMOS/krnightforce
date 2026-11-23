@@ -1,0 +1,13 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fix: the bidder supplies a fresh random nonce and keeps it to open the bid later.
+export ledger sealed_bid: Bytes<32>;
+
+witness bid_amount(): Uint<16>;
+witness bid_nonce(): Bytes<32>;
+
+export circuit seal(): [] {
+  sealed_bid = persistentCommit<Uint<16>>(bid_amount(), bid_nonce());
+}

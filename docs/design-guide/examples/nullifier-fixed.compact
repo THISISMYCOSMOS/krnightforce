@@ -1,0 +1,17 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Scoped nullifier: one action per member per poll. The nullifier mixes in the
+// poll id, so the same member's nullifiers in two polls look unrelated.
+// Pitfall it avoids: hashing only the secret gives the same tag in every poll,
+// which links all of one member's actions.
+export ledger used: Set<Bytes<32>>;
+
+witness member_secret(): Bytes<32>;
+
+export circuit act(poll: Bytes<32>): [] {
+  const n = persistentHash<Vector<3, Bytes<32>>>([pad(32, "example:nullifier:v1"), disclose(poll), member_secret()]);
+  assert(!used.member(disclose(n)), "already acted in this poll");
+  used.insert(disclose(n));
+}

@@ -1,0 +1,30 @@
+{
+	"id": "vote-branch",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/poll.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "vote",
+					"input": "witness:choice",
+					"attack": "A5",
+					"kind": "RECOVERABLE",
+					"location": "path",
+					"note": "fails only with privacy-spec.json"
+				}
+			],
+			"intendedDisclosures": []
+		},
+		{
+			"path": "fixed/poll.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": []
+		}
+	]
+}

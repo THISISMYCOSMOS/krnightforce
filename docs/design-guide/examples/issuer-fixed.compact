@@ -1,0 +1,25 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fix: only the issuer fixed at deployment can add credentials. The issuer
+// proves knowledge of its secret; the ledger holds only its commitment.
+export ledger issuer_commit: Bytes<32>;
+export ledger credentials: Set<Bytes<32>>;
+
+witness issuer_secret(): Bytes<32>;
+witness claim_value(): Uint<8>;
+witness claim_nonce(): Bytes<32>;
+
+circuit issuer_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:issuer:v1"), secret]);
+}
+
+constructor(issuer: Bytes<32>) {
+  issuer_commit = disclose(issuer);
+}
+
+export circuit issueCredential(): [] {
+  assert(issuer_commitment(issuer_secret()) == issuer_commit, "not the issuer");
+  credentials.insert(persistentCommit<Uint<8>>(claim_value(), claim_nonce()));
+}

@@ -1,0 +1,7 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness getBalance(): Uint<64>;
+export circuit withdraw(amount: Uint<64>): [] {
+  const balance = getBalance();
+  assert(balance >= amount, "Balance " ++ balance ++ " insufficient");
+}

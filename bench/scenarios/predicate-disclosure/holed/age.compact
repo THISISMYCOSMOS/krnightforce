@@ -1,0 +1,12 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Hole: the design only needs "over 18", but the whole age is disclosed.
+export ledger checked: Map<Bytes<32>, Uint<8>>;
+
+witness holder_age(): Uint<8>;
+
+export circuit check(id: Bytes<32>): [] {
+  checked.insert(disclose(id), disclose(holder_age()));
+}

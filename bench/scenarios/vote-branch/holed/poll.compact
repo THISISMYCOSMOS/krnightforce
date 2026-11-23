@@ -1,0 +1,18 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Hole: the hidden choice decides which counter moves, so the transcript shows
+// which ledger cell was touched.
+export ledger yes_count: Counter;
+export ledger no_count: Counter;
+
+witness choice(): Boolean;
+
+export circuit vote(): [] {
+  if (disclose(choice())) {
+    yes_count.increment(1);
+  } else {
+    no_count.increment(1);
+  }
+}

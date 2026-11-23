@@ -1,0 +1,9 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+witness w(): Uint<64>;
+witness wb(): Bytes<32>;
+witness salt(): Bytes<32>;
+witness wf(): Field;
+
+circuit g(a: Uint<64>): Uint<64> { if (a > 100) { return 1; } else { return 2; } }
+export circuit f(): [] { const r = g(w()); assert(r == 1 || r == 2, "x"); }
