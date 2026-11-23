@@ -1,0 +1,21 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fixed version of vault.compact: no unsalted PIN hash, and the vote is stored
+// as a salted commitment instead of choosing which counter moves.
+export ledger pin_commit: Bytes<32>;
+export ledger ballots: Set<Bytes<32>>;
+
+witness secret_pin(): Bytes<32>;
+witness pin_salt(): Bytes<32>;
+witness vote_choice(): Boolean;
+witness vote_salt(): Bytes<32>;
+
+export circuit register(): [] {
+  pin_commit = persistentCommit<Bytes<32>>(secret_pin(), pin_salt());
+}
+
+export circuit vote(): [] {
+  ballots.insert(persistentCommit<Boolean>(vote_choice(), vote_salt()));
+}

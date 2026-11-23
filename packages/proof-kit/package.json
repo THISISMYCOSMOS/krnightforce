@@ -1,0 +1,44 @@
+{
+	"name": "proof-kit",
+	"version": "0.0.1",
+	"description": "Runs compiled Compact contracts in the local runtime and attacks them to test whether hidden values stay hidden on chain.",
+	"type": "module",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/THISISMYCOSMOS/krnightforce.git",
+		"directory": "packages/proof-kit"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"bin": {
+		"proof-kit": "./dist/cli.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": ["dist"],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"check": "tsc --noEmit",
+		"fixtures": "node scripts/compile-fixtures.mjs",
+		"test": "vitest run",
+		"lint": "biome check ."
+	},
+	"peerDependencies": {
+		"@midnight-ntwrk/compact-runtime": ">=0.21.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@midnight-ntwrk/compact-runtime": "0.21.0",
+		"@types/node": "^22.10.0",
+		"typescript": "^5.7.0",
+		"vitest": "^3.2.4"
+	}
+}

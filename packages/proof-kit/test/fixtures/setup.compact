@@ -1,0 +1,30 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Setup-search fixture: calls only run when the constructor's owner commitment
+// matches the caller's secret, and isAdult only runs after issue created the entry.
+export ledger owner_commit: Bytes<32>;
+export ledger passports: Map<Bytes<32>, Uint<8>>;
+
+witness owner_secret(): Bytes<32>;
+witness holder_age(): Uint<8>;
+
+export pure circuit owner_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "owner"), secret]);
+}
+
+constructor(commit: Bytes<32>) {
+  owner_commit = disclose(commit);
+}
+
+export circuit issue(id: Bytes<32>): [] {
+  assert(owner_commitment(owner_secret()) == owner_commit, "Only the owner");
+  // Hole: the holder's age is stored in the clear.
+  passports.insert(disclose(id), disclose(holder_age()));
+}
+
+export circuit isAdult(id: Bytes<32>): Boolean {
+  assert(passports.member(disclose(id)), "unknown passport");
+  return disclose(passports.lookup(disclose(id)) >= 18);
+}

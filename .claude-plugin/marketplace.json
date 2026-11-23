@@ -1,0 +1,16 @@
+{
+	"name": "krnightforce",
+	"metadata": {
+		"version": "0.0.1",
+		"description": "Midnight Proof Kit: run Compact contracts in the local simulator to test whether values meant to stay hidden really stay hidden."
+	},
+	"owner": {
+		"name": "THISISMYCOSMOS"
+	},
+	"plugins": [
+		{
+			"name": "proof-kit",
+			"source": "./plugins/proof-kit"
+		}
+	]
+}

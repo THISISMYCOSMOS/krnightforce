@@ -1,0 +1,22 @@
+{
+	"name": "proof-kit",
+	"version": "0.0.1",
+	"description": "Midnight Proof Kit: runs Compact contracts in the local simulator to test whether values meant to stay hidden really stay hidden on chain (exposure, recovery, linking, path attacks). Verdicts come from execution only.",
+	"author": {
+		"name": "THISISMYCOSMOS"
+	},
+	"homepage": "https://github.com/THISISMYCOSMOS/krnightforce",
+	"repository": "https://github.com/THISISMYCOSMOS/krnightforce.git",
+	"license": "Apache-2.0",
+	"keywords": [
+		"midnight",
+		"compact",
+		"privacy",
+		"disclosure",
+		"attack",
+		"testing",
+		"simulator",
+		"zero-knowledge",
+		"vitest"
+	]
+}

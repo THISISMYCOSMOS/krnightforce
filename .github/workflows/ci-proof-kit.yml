@@ -1,0 +1,82 @@
+name: CI - Proof Kit
+
+on:
+  pull_request:
+    branches: ['**']
+    paths:
+      - 'packages/proof-kit/**'
+      - 'plugins/proof-kit/**'
+      - '.claude-plugin/**'
+      - '.github/workflows/ci-proof-kit.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/proof-kit/**'
+      - 'plugins/proof-kit/**'
+      - '.claude-plugin/**'
+      - '.github/workflows/ci-proof-kit.yml'
+
+permissions:
+  contents: read
+
+env:
+  COMPACTC_VERSION: '0.36.0'
+
+jobs:
+  engine:
+    name: Engine (check + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/proof-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/proof-kit/package-lock.json
+
+      # Download the compiler release asset directly instead of `compact update`,
+      # which calls the GitHub API and hits rate limits on shared runners.
+      - name: Cache Compact compiler
+        id: compactc-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/compactc
+          key: compactc-${{ env.COMPACTC_VERSION }}-x86_64-linux-musl
+      - name: Install Compact compiler
+        if: steps.compactc-cache.outputs.cache-hit != 'true'
+        working-directory: .
+        run: |
+          mkdir -p "$HOME/compactc"
+          curl -sSfL -o /tmp/compactc.zip \
+            "https://github.com/midnightntwrk/compact/releases/download/compactc-v${COMPACTC_VERSION}/compactc_v${COMPACTC_VERSION}_x86_64-unknown-linux-musl.zip"
+          unzip -oq /tmp/compactc.zip -d "$HOME/compactc"
+      - name: Add compiler to PATH
+        working-directory: .
+        run: |
+          echo "$HOME/compactc" >> "$GITHUB_PATH"
+          "$HOME/compactc/compactc" --version
+
+      - run: npm ci
+      - run: npm run fixtures
+      - run: npm run check
+      - run: npm test
+
+  plugin:
+    name: Plugin (shell + JSON)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck hook scripts
+        run: shellcheck -x plugins/proof-kit/scripts/hooks/*.sh
+      - name: Validate plugin JSON
+        run: |
+          for f in .claude-plugin/marketplace.json \
+                   plugins/proof-kit/.claude-plugin/plugin.json \
+                   plugins/proof-kit/hooks/hooks.json \
+                   bench/schema/answer-key.schema.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" && echo "ok $f"
+          done

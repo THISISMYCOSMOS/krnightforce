@@ -1,0 +1,23 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+export enum Color { red, green, blue }
+export struct Info { age: Uint<8>, color: Color, tag: Bytes<4> }
+export ledger out: Bytes<32>;
+export ledger n: Uint<64>;
+witness w_struct(): Info;
+witness w_vec(): Vector<3, Uint<16>>;
+witness w_maybe(): Maybe<Field>;
+witness w_range(): Uint<0..1000>;
+witness w_arg(x: Uint<8>): Boolean;
+constructor(init: Uint<64>) { n = disclose(init); }
+export circuit c1(a: Uint<32>, b: Bytes<32>, f: Field): Uint<8> {
+  const s = w_struct();
+  const v = w_vec();
+  const m = w_maybe();
+  const r = w_range();
+  const ok = w_arg(3);
+  out = disclose(persistentHash<Bytes<32>>(b));
+  n = disclose(a as Uint<64>);
+  return disclose(s.age);
+}
+export pure circuit helper(x: Uint<8>): Uint<8> { return x; }

@@ -1,0 +1,56 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/THISISMYCOSMOS/krnightforce/bench/schema/answer-key.schema.json",
+	"title": "proof-kit bench answer key",
+	"type": "object",
+	"required": ["id", "compilerVersion", "contracts"],
+	"additionalProperties": false,
+	"properties": {
+		"id": { "type": "string", "description": "Scenario or anonymous corpus id (never a third-party repo name in this public repo)." },
+		"commit": { "type": "string", "description": "Pinned commit SHA for corpus entries; omitted for self-written scenarios." },
+		"compilerVersion": { "type": "string", "examples": ["0.36.0"] },
+		"contracts": {
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "object",
+				"required": ["path", "variant", "expectFailures", "findings", "intendedDisclosures"],
+				"additionalProperties": false,
+				"properties": {
+					"path": { "type": "string", "description": "Path to the .compact file, relative to the scenario directory." },
+					"variant": { "enum": ["holed", "fixed", "corpus"] },
+					"expectFailures": { "type": "boolean", "description": "false for fixed versions: any reported failure is a false positive." },
+					"findings": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["circuit", "input", "attack", "kind", "location"],
+							"additionalProperties": false,
+							"properties": {
+								"circuit": { "type": "string" },
+								"input": { "type": "string", "description": "Hidden input: witness name or circuit argument (circuit:arg)." },
+								"attack": { "enum": ["A1", "A2", "A3", "A5"] },
+								"kind": { "enum": ["EXPOSED", "RECOVERABLE", "PARTIAL", "LINKABLE"] },
+								"location": { "enum": ["value", "path", "result"] },
+								"note": { "type": "string" }
+							}
+						}
+					},
+					"intendedDisclosures": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["circuit", "input", "reason"],
+							"additionalProperties": false,
+							"properties": {
+								"circuit": { "type": "string" },
+								"input": { "type": "string" },
+								"reason": { "type": "string" }
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

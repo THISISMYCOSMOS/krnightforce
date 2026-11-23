@@ -1,0 +1,7 @@
+node_modules/
+dist/
+managed/
+coverage/
+.proofkit-cache/
+*.log
+.DS_Store

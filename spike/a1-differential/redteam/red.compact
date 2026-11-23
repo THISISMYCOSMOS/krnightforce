@@ -1,0 +1,39 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Red-team contract: patterns that could break the spike's conclusions.
+export ledger flag: Boolean;
+export ledger owner: Bytes<32>;
+export ledger hits: Counter;
+
+witness secret_num(): Uint<16>;
+witness owner_sk(): Bytes<32>;
+
+constructor() {
+  owner = disclose(persistentHash<Bytes<32>>(owner_sk()));
+}
+
+// R5: only one bit leaks (secret > 100). A single random pair may not differ.
+export circuit threshold(): [] {
+  flag = disclose(secret_num() > 100);
+}
+
+// R2: secret leaks through the return value only, not the ledger.
+export circuit getBack(): Uint<16> {
+  return disclose(secret_num());
+}
+
+// R9: ownership check. Varying the secret alone makes the second run abort.
+export circuit act(): [] {
+  assert(owner == disclose(persistentHash<Bytes<32>>(owner_sk())), "not owner");
+  hits.increment(1);
+}
+
+// R3: ledger write inside an internal helper circuit.
+circuit bump(): [] {
+  hits.increment(1);
+}
+export circuit viaHelper(): [] {
+  bump();
+}

@@ -1,0 +1,30 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fixed version of red.compact: the threshold result is committed with a salt
+// instead of disclosed. The return value stays (it goes to the caller only).
+export ledger flag_commit: Bytes<32>;
+export ledger owner: Bytes<32>;
+export ledger hits: Counter;
+
+witness secret_num(): Uint<16>;
+witness flag_salt(): Bytes<32>;
+witness owner_sk(): Bytes<32>;
+
+constructor() {
+  owner = disclose(persistentHash<Bytes<32>>(owner_sk()));
+}
+
+export circuit threshold(): [] {
+  flag_commit = persistentCommit<Boolean>(secret_num() > 100, flag_salt());
+}
+
+export circuit getBack(): Uint<16> {
+  return disclose(secret_num());
+}
+
+export circuit act(): [] {
+  assert(owner == disclose(persistentHash<Bytes<32>>(owner_sk())), "not owner");
+  hits.increment(1);
+}
