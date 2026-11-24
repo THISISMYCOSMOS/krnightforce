@@ -126,10 +126,15 @@ export function renderMermaid(report: Report, key = "m"): string {
 	const lines: string[] = ["flowchart LR"];
 	lines.push(`  subgraph ${key}_in[${label("숨긴 값")}]`);
 	let n = 0;
+	const shared = new Map((report.verifierChecks ?? []).map((v) => [v.input, v]));
 	for (const [input, cls] of inputs) {
 		const id = nodeId(`${key}_i`, input, n++);
 		inputIds.set(input, id);
-		lines.push(`    ${id}[${label(input)}]:::${cls}`);
+		const v = shared.get(input);
+		const text = v
+			? `${input}\n검증자: ${v.shareWith}${v.status === "missing" ? " (체인에 커밋 없음)" : ""}`
+			: input;
+		lines.push(`    ${id}[${label(text)}]:::${cls}`);
 	}
 	lines.push("  end");
 	lines.push(`  subgraph ${key}_c[${label("회로")}]`);
@@ -159,7 +164,8 @@ export function renderMermaid(report: Report, key = "m"): string {
 
 function summaryLine(r: Report): string {
 	const s = r.summary;
-	return `실패 ${s.failures}건 · 시험한 입력 ${s.tested}개 · 시험 못 함 ${s.untestable}개 · 누출 설명 ${r.spec ? "사용" : "없음"}`;
+	const missing = s.verifierMissing ? ` · 검증자가 대조할 커밋 없음 ${s.verifierMissing}개` : "";
+	return `실패 ${s.failures}건 · 시험한 입력 ${s.tested}개 · 시험 못 함 ${s.untestable}개 · 누출 설명 ${r.spec ? "사용" : "없음"}${missing}`;
 }
 
 const LEGEND = [
@@ -170,6 +176,8 @@ const LEGEND = [
 	"| 공개 | 드러나지만 누출 설명이 허용했거나 코드가 `disclose()`로 선언함 (`disclosure`) |",
 	"| 위험 | 실패 (`failure: true`: `EXPOSED`, `RECOVERABLE`, `PARTIAL`, `UNBOUND`) |",
 	"| 시험 못 함 | 엔진이 돌리지 못함 (`untestable`). 통과가 아님 |",
+	"",
+	'"검증자: …"가 붙은 값은 누출 설명의 `shareWith`로, 그 상대에게만 opening(값 + nonce)을 장부 밖으로 건넵니다. 색은 공개 장부 기준입니다. "체인에 커밋 없음"이면 상대가 opening을 대조할 커밋이 체인에 없습니다.',
 	"",
 	'한 값이 여러 회로에 쓰이면, 왼쪽 칸의 색은 가장 나쁜 결과(위험 > 시험 못 함 > 공개 > 증명만 > 숨김)를 따릅니다. 통과는 "이 공격 목록으로 재현되지 않음"이지 안전하다는 뜻이 아닙니다.',
 ].join("\n");

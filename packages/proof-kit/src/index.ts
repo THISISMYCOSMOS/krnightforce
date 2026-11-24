@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export { attack, criteriaFor, FAILURE_KINDS, VERSION } from "./attack.js";
+export { attack, criteriaFor, FAILURE_KINDS, VERSION, verifierChecks } from "./attack.js";
 export type {
 	AttackOptions,
 	Finding,
@@ -21,6 +21,7 @@ export type {
 	Kind,
 	Report,
 	UnitReport,
+	VerifierCheck,
 	Where,
 } from "./attack.js";
 export { loadCompiled, Runner } from "./harness.js";

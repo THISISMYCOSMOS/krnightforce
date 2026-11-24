@@ -15,7 +15,7 @@ Users describe what they want to show or hide, but their situation usually invol
    - **Processing metadata** (first-time builders rarely think of it): how many records, steps or transactions an action takes, progress counters, version or revision numbers, and the deployment unit. One transaction per record publishes the record count; a contract deployed per user ties every action of that user to one contract address.
 2. For each item, record what the user said: show, hide, or not mentioned. "Show" has two audiences; ask which:
    - **everyone**: it goes on the public ledger.
-   - **one verifier only** (the insurer, the scholarship office, the pharmacy): the ledger holds a commitment, and the user hands the verifier the opening (value + nonce) off chain. The verifier checks it against the commitment. Users often want exact numbers for the verifier ("the insurer should see the exact score") and nothing for the public; these are different rows.
+   - **one verifier only** (the insurer, the scholarship office, the pharmacy): the ledger holds a commitment, and the user hands the verifier the opening (value + nonce) off chain. The verifier checks it against the commitment. Write this as `"shareWith": "<party>"` on the input's `hidden` entry in `privacy-spec.json`; `/proof:attack` then checks that such a commitment really lands on chain. Users often want exact numbers for the verifier ("the insurer should see the exact score") and nothing for the public; these are different rows.
 3. Propose a default with a reason:
    - Needed by the app and the user wants it shown → reveal (as a value, or only a fact such as "over 18", "bought over a year ago").
    - Not needed by the app → do not put it on chain at all; if it must be checked, keep a commitment.

@@ -19,7 +19,12 @@ import { dirname, join, resolve } from "node:path";
 /** The leakage description (docs/design-guide.md chapter 2): what a contract may reveal. */
 export interface PrivacySpec {
 	contract?: string;
-	hidden?: { input: string; range?: string; why?: string }[];
+	/**
+	 * `shareWith`: the one party (an insurer, an office) that gets the opening (value +
+	 * nonce) off chain and checks it against an on-chain commitment. On the public
+	 * ledger the value stays hidden; the engine checks the commitment exists.
+	 */
+	hidden?: { input: string; range?: string; why?: string; shareWith?: string }[];
 	mayReveal?: {
 		circuit: string;
 		input: string;
@@ -49,6 +54,9 @@ export function loadSpec(path: string): LoadedSpec {
 	}
 	const ranges = new Map<string, [bigint, bigint]>();
 	for (const h of spec.hidden ?? []) {
+		if (h.shareWith !== undefined && (typeof h.shareWith !== "string" || h.shareWith === "")) {
+			throw new Error(`${abs}: hidden[].shareWith must be a non-empty string (input ${h.input})`);
+		}
 		const m = /^\s*(\d+)\s*\.\.\s*(\d+)\s*$/.exec(h.range ?? "");
 		if (m) ranges.set(h.input, [BigInt(m[1]), BigInt(m[2])]);
 	}

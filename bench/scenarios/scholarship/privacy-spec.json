@@ -1,14 +1,41 @@
 {
 	"contract": "scholarship.compact",
 	"hidden": [
-		{ "input": "witness:student_no", "range": "0..9999", "why": "identifies the student; the entry year is public, so only the last four digits are unknown" },
-		{ "input": "witness:income_pct", "range": "0..400", "why": "household income as a percentage of the median income" },
-		{ "input": "witness:cred_nonce", "why": "commitment nonce, also the student's credential secret" },
-		{ "input": "witness:office_secret", "why": "scholarship office key" }
+		{
+			"input": "witness:student_no",
+			"range": "0..9999",
+			"why": "identifies the student; the entry year is public, so only the last four digits are unknown",
+			"shareWith": "scholarship office"
+		},
+		{
+			"input": "witness:income_pct",
+			"range": "0..400",
+			"why": "household income as a percentage of the median income",
+			"shareWith": "scholarship office"
+		},
+		{
+			"input": "witness:cred_nonce",
+			"why": "commitment nonce, also the student's credential secret"
+		},
+		{
+			"input": "witness:office_secret",
+			"why": "scholarship office key"
+		}
 	],
 	"mayReveal": [
-		{ "circuit": "openRound", "input": "arg:r", "kind": "value", "why": "public round number" },
-		{ "circuit": "apply", "input": "witness:income_pct", "kind": "fact", "fact": "income_pct <= 100", "why": "eligibility needs only 'at or below the median'" }
+		{
+			"circuit": "openRound",
+			"input": "arg:r",
+			"kind": "value",
+			"why": "public round number"
+		},
+		{
+			"circuit": "apply",
+			"input": "witness:income_pct",
+			"kind": "fact",
+			"fact": "income_pct <= 100",
+			"why": "eligibility needs only 'at or below the median'"
+		}
 	],
 	"acceptedLeakage": [
 		"that a credential was issued, and when (credentials go to every student who asks)",
@@ -17,11 +44,31 @@
 		"the office learns which credential applied (it issued them)"
 	],
 	"unlinkable": [
-		{ "actions": ["apply", "apply"], "why": "the same student's applications in two rounds" },
-		{ "actions": ["issue", "apply"], "why": "the public must not tell which issued credential applied (checked later by A3; this design accepts it, see the walkthrough)" }
+		{
+			"actions": [
+				"apply",
+				"apply"
+			],
+			"why": "the same student's applications in two rounds"
+		},
+		{
+			"actions": [
+				"issue",
+				"apply"
+			],
+			"why": "the public must not tell which issued credential applied (checked later by A3; this design accepts it, see the walkthrough)"
+		}
 	],
 	"vouchedBy": [
-		{ "input": "witness:income_pct", "by": "scholarship office", "how": "only the office can call issue, after checking income papers off chain" },
-		{ "input": "witness:student_no", "by": "scholarship office", "how": "same" }
+		{
+			"input": "witness:income_pct",
+			"by": "scholarship office",
+			"how": "only the office can call issue, after checking income papers off chain"
+		},
+		{
+			"input": "witness:student_no",
+			"by": "scholarship office",
+			"how": "same"
+		}
 	]
 }

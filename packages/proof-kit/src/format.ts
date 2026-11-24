@@ -74,6 +74,14 @@ export function formatText(r: Report): string {
 	}
 	if (r.pureCircuits.length > 0)
 		lines.push(`\npure circuits (no transaction, not attacked): ${r.pureCircuits.join(", ")}`);
+	if ((r.verifierChecks ?? []).length > 0) lines.push("");
+	for (const v of r.verifierChecks ?? []) {
+		lines.push(
+			v.status === "ok"
+				? `verifier check: ${v.input} → ${v.shareWith}: ok (${v.circuits.join(", ")})`
+				: `verifier check: ${v.input} → ${v.shareWith}: MISSING: no commitment of this value on chain; the verifier cannot check the opening`,
+		);
+	}
 	const s = r.summary;
 	lines.push(
 		`\n${s.failures} failure(s); ${s.tested} input(s) tested, ${s.untestable} untestable; ${s.runs} runs in ${s.ms} ms`,
