@@ -1,0 +1,32 @@
+{
+  "contract": "salary_band.compact",
+  "hidden": [
+    {"input": "witness:salary", "range": "15000..400000", "why": "The applicant's annual salary. Only 'inside the posting's band' may be learned."},
+    {"input": "arg:amount", "range": "15000..400000", "why": "Same salary, as HR passes it when issuing the record."},
+    {"input": "witness:employeeSecret", "why": "The employee's secret key; applications must not reveal which employee/record they come from."},
+    {"input": "arg:employee", "why": "Employee key HR issues to; must not be learnable from the stored record."},
+    {"input": "witness:salarySalt", "why": "Commitment randomness."},
+    {"input": "arg:salt", "why": "Commitment randomness as HR passes it."},
+    {"input": "witness:salaryPath", "why": "Position of the record in the tree identifies the employee."},
+    {"input": "witness:issuerSecret", "why": "HR signing secret."}
+  ],
+  "mayReveal": [
+    {"circuit": "postJob", "input": "arg:postingId", "kind": "value", "why": "Job postings are public."},
+    {"circuit": "postJob", "input": "arg:lo", "kind": "value", "why": "The band is public."},
+    {"circuit": "postJob", "input": "arg:hi", "kind": "value", "why": "The band is public."},
+    {"circuit": "applyWithBand", "input": "arg:postingId", "kind": "value", "why": "Which posting received an application is public."},
+    {"circuit": "applyWithBand", "input": "witness:salary", "kind": "fact", "fact": "band.lo <= salary <= band.hi", "why": "The whole point of the attestation."},
+    {"circuit": "applyWithBand", "input": "witness:salaryPath", "kind": "value", "why": "Only the Merkle root (already public) is revealed."},
+    {"circuit": "applyWithBand", "input": "witness:employeeSecret", "kind": "value", "why": "Only a per-posting nullifier hash(domain, postingId, sk) is revealed; it is unlinkable across postings."},
+    {"circuit": "issueSalary", "input": "arg:amount", "kind": "value", "why": "Only inside a salted commitment with 256-bit salt."}
+  ],
+  "acceptedLeakage": [
+    "The number of salary records issued and the number of applications per posting.",
+    "That an application happened at a given time (transaction timing / fee payer is outside the contract).",
+    "The recruiter learns the applicant's identity through the off-chain application itself; the contract must not add salary or cross-posting linkage."
+  ],
+  "unlinkable": [
+    {"actions": ["issueSalary", "applyWithBand"], "why": "An application must not point at the specific HR record (and so at the employee/employer)."},
+    {"actions": ["applyWithBand", "applyWithBand"], "why": "Two applications by the same employee to different postings must not be linkable."}
+  ]
+}

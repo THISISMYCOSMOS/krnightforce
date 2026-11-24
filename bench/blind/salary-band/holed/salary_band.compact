@@ -1,0 +1,67 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Private salary-band attestation for job applications.
+// HR (the issuer) records an employee's salary on chain; the employee later
+// proves to a recruiter that the salary lies inside a job posting's band.
+
+export struct Band {
+  lo: Uint<32>;
+  hi: Uint<32>;
+}
+
+export struct SalaryRecord {
+  employee: Bytes<32>;
+  amount: Uint<32>;
+}
+
+export ledger issuer: Bytes<32>;
+export ledger postings: Map<Bytes<32>, Band>;
+export ledger salaryRecords: Set<Bytes<32>>;
+export ledger applications: Counter;
+
+witness issuerSecret(): Bytes<32>;
+witness employeeSecret(): Bytes<32>;
+witness salary(): Uint<32>;
+
+circuit issuerKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "salary:issuer"), sk]);
+}
+
+circuit employeeKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "salary:employee"), sk]);
+}
+
+circuit salaryLeaf(employee: Bytes<32>, amount: Uint<32>): Bytes<32> {
+  return persistentHash<SalaryRecord>(SalaryRecord { employee: employee, amount: amount });
+}
+
+constructor() {
+  issuer = disclose(issuerKey(issuerSecret()));
+}
+
+// A recruiter publishes a job posting with its salary band.
+export circuit postJob(postingId: Bytes<32>, lo: Uint<32>, hi: Uint<32>): [] {
+  assert(lo <= hi, "invalid band");
+  postings.insert(disclose(postingId), Band { lo: disclose(lo), hi: disclose(hi) });
+}
+
+// HR records the salary of an employee (identified by their employee key).
+export circuit issueSalary(employee: Bytes<32>, amount: Uint<32>): [] {
+  assert(issuerKey(issuerSecret()) == issuer, "only HR may issue");
+  salaryRecords.insert(disclose(salaryLeaf(employee, amount)));
+}
+
+// The employee applies to a posting and proves the salary is inside its band.
+export circuit applyWithBand(postingId: Bytes<32>): Uint<32> {
+  assert(postings.member(disclose(postingId)), "unknown posting");
+  const band = postings.lookup(disclose(postingId));
+  const me = employeeKey(employeeSecret());
+  const s = salary();
+  assert(salaryRecords.member(disclose(salaryLeaf(me, s))), "no salary record");
+  assert(s >= band.lo && s <= band.hi, "salary outside band");
+  applications.increment(1);
+  // returned so the recruiter dashboard can show the attested salary
+  return disclose(s);
+}
