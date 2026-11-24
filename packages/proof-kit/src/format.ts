@@ -53,7 +53,10 @@ export function formatText(r: Report): string {
 				const where = f.onChain
 					? `${f.where} ${f.location}`
 					: "return value (goes to the caller, not on chain)";
-				lines.push(`  ${i.input} (${i.type}): ${label} [${f.attack}] at ${where} — ${f.detail}`);
+				const crit = f.criteria.length > 0 ? ` (criteria ${f.criteria.join(", ")})` : "";
+				lines.push(
+					`  ${i.input} (${i.type}): ${label} [${f.attack}] at ${where} — ${f.detail}${crit}`,
+				);
 			}
 		}
 	}

@@ -1,52 +1,44 @@
 ---
 name: proof:proof-spec
-description: Use when designing a Compact (Midnight) contract's privacy before or while writing it — deciding which values stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input — or when a proof-kit attack test failed and a fix pattern is needed. Writes the leakage description (privacy-spec.json) that the attack tests check.
-version: 0.0.1
+description: Use when designing a Compact (Midnight) contract's privacy before or while writing it — deciding which values stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input — or when a proof-kit attack test failed and the user needs to know which design criterion was broken and how to fix it. Produces a design proposal and the leakage description (privacy-spec.json) that attack tests check.
+version: 0.0.2
 ---
 
-# Proof Kit: privacy design guide
+# Proof Kit: privacy design
 
-A contract is two things (Kachina): what it does, and what it reveals. This skill helps the user write down what it reveals, as a leakage description the user agrees to. The attack tests (`proof:proof-attack`) then check that the contract reveals nothing outside it. The full guide is `docs/design-guide.md` in the proof-kit repo.
+A contract is two things (Kachina): what it does, and what it reveals. You help the user design both, against the twelve criteria in `references/criteria.md`, and write down what it reveals as a leakage description the user agrees to. `/proof:attack` then checks the contract against it. The human guide is `docs/design-guide.md`.
 
 ## When NOT to use
 
 - Running or reading attack tests: use `proof:proof-attack`.
-- Access-control audits beyond "who vouches for this input": use `compact-core:audit-compact`.
-- Compile errors about `disclose()`: fix the compile first; the compiler is right to ask.
+- Full access-control audits: use `compact-core:audit-compact`.
+- Compile errors about `disclose()`: fix the compile first.
 - Wallets, proving servers, fees, unshielded tokens, network metadata: out of scope. Say so.
 
 ## Pitfalls (read first)
 
-1. **Do not decide for the user what may be revealed.** Ask. The leakage description is theirs to agree to.
-2. **A hash is not a commitment.** Never suggest `persistentHash` to hide a value with a small range.
-3. **A commitment needs a fresh random nonce per value.** Constant, zero, reused or secret-derived salts compile but do not hide.
-4. **`ownPublicKey()` proves nothing about the caller** and links actions if stored.
-5. **Every witness can be set by the user.** For each input, ask who vouches for it.
-6. **Never present a fix as safe until the attack test passes on it.** Rerun `/proof:attack` after every fix.
+1. **The user decides what may be revealed.** Offer examples; never fill in answers for them silently.
+2. **Never present a guidance criterion (3, 9, 10, 11) as checked.** Only attack tests decide pass or fail.
+3. **A hash is not a commitment.** Never propose `persistentHash` to hide a value with a small range.
+4. **A commitment needs a fresh nonce per value**, kept by the user.
+5. **Never call a design safe.** Say which criteria the attack tests will check, and which they cannot.
 
-## Step 1: What the contract does (guide ch. 1)
+## Flow
 
-List each exported circuit: which ledger fields it changes, which witnesses and arguments it uses, who calls it. Return values go to the caller, not on chain.
+Start from an idea, or from an existing contract (then draft step 1 from its exported circuits, witnesses and ledger fields, and ask the user to confirm).
 
-## Step 2: What may be revealed (guide ch. 2)
+**Step 1. What it does.** Restate the app in one sentence and list the circuits: who calls each, what it changes on the ledger. Ask "Is this right?"
 
-Ask, one short question each:
-
+**Step 2. Four questions, one at a time, each with an example from their app:**
 1. Which values must stay hidden?
-2. Which values or facts about them may be revealed, and why? (e.g. a public id; "age >= 18")
-3. Which actions must not be linkable to each other?
-4. What unavoidable leakage is acceptable? (that an action happened, its time, the size of the group)
+2. What may be revealed — values or facts — and why?
+3. Which actions must not be linkable?
+4. Who vouches for each value the user supplies?
 
-Anything not listed as revealable is hidden.
+**Step 3. Design proposal** in the five parts of `references/design-output.md`: what goes where; what each circuit reveals; building block per value with its pitfall; works / does not work; how it will be checked.
 
-## Step 3: Who vouches for each input (guide ch. 3)
+**Step 4. Agreement.** Ask the user to agree to part 2. Then write `privacy-spec.json` next to the contract in the format of `references/privacy-spec.md`.
 
-For each hidden input: the user alone, a secret only the owner knows, a fixed issuer, or state the contract already holds. Use the patterns in `references/patterns.md`.
+**Step 5. Check and fix.** After the contract is written, run `/proof:attack`. For each failure, name the criterion from its `criteria` field, give the matching pattern from `references/patterns.md` (pitfall first, then the fix), and rerun until the tests pass. Then run `/proof:map` (planned) to draw the result.
 
-## Step 4: Write the leakage description
-
-Write `privacy-spec.json` next to the contract, in the format in `references/privacy-spec.md`. Show it to the user and get agreement before using it.
-
-## Step 5: Check, and fix on failure
-
-Run `/proof:attack` with the spec. For each failure, find the matching pattern in `references/patterns.md` (pitfall first, then the fix), apply it, and rerun until the attack test passes. Report only what the engine reported.
+A worked example of all five steps: `docs/design-guide/walkthrough-health-credential.md`.

@@ -69,6 +69,18 @@ export interface Finding {
 	failure: boolean;
 	detail: string;
 	evidence: Record<string, unknown>;
+	/** Design criteria (plugins/proof-kit/skills/proof-spec/references/criteria.md) a failure breaks. Empty when not a failure. */
+	criteria: number[];
+}
+
+/** Map a failing finding to the design criteria it breaks. */
+export function criteriaFor(f: Pick<Finding, "kind" | "where" | "failure">): number[] {
+	if (!f.failure) return [];
+	if (f.where === "path") return [7, 2];
+	if (f.kind === "RECOVERABLE") return [4, 5];
+	if (f.kind === "EXPOSED") return [1, 2];
+	if (f.kind === "PARTIAL") return [6, 2];
+	return [];
 }
 
 export interface InputReport {
@@ -445,6 +457,7 @@ async function attackLeaf(
 			failure: onChain && FAILURE_KINDS.includes(kind),
 			detail,
 			evidence,
+			criteria: [],
 		});
 		if (maskedBy.length > 0) {
 			report.findings.push(
@@ -531,6 +544,7 @@ async function attackLeaf(
 			}
 		}
 	}
+	for (const f of report.findings) f.criteria = criteriaFor(f);
 	return report;
 }
 

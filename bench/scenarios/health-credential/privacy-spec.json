@@ -1,0 +1,60 @@
+{
+	"contract": "credential.compact",
+	"hidden": [
+		{
+			"input": "witness:patient_age",
+			"range": "0..120",
+			"why": "health data"
+		},
+		{
+			"input": "witness:patient_condition",
+			"range": "0..65535",
+			"why": "health data"
+		},
+		{
+			"input": "witness:issuer_secret",
+			"why": "issuer key"
+		},
+		{
+			"input": "witness:claim_nonce",
+			"why": "commitment nonce"
+		}
+	],
+	"mayReveal": [
+		{
+			"circuit": "issue",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public credential id"
+		},
+		{
+			"circuit": "verifyAdult",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public credential id"
+		},
+		{
+			"circuit": "verifyAdult",
+			"input": "witness:patient_age",
+			"kind": "fact",
+			"fact": "patient_age >= 18",
+			"why": "the verifier needs adults only"
+		}
+	],
+	"acceptedLeakage": [
+		"that a credential was issued or verified, and when"
+	],
+	"unlinkable": [],
+	"vouchedBy": [
+		{
+			"input": "witness:patient_age",
+			"by": "issuer",
+			"how": "only the issuer can call issue"
+		},
+		{
+			"input": "witness:patient_condition",
+			"by": "issuer",
+			"how": "only the issuer can call issue"
+		}
+	]
+}

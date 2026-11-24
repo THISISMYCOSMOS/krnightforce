@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export { attack, FAILURE_KINDS, VERSION } from "./attack.js";
+export { attack, criteriaFor, FAILURE_KINDS, VERSION } from "./attack.js";
 export type {
 	AttackOptions,
 	Finding,

@@ -1,0 +1,77 @@
+{
+	"id": "health-credential",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/credential.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "issue",
+					"input": "witness:patient_age",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				},
+				{
+					"circuit": "issue",
+					"input": "witness:patient_condition",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				},
+				{
+					"circuit": "verifyAdult",
+					"input": "witness:patient_age",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				},
+				{
+					"circuit": "verifyAdult",
+					"input": "witness:patient_condition",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				}
+			],
+			"intendedDisclosures": [
+				{
+					"circuit": "issue",
+					"input": "arg:id",
+					"reason": "public credential id"
+				},
+				{
+					"circuit": "verifyAdult",
+					"input": "arg:id",
+					"reason": "public credential id"
+				}
+			]
+		},
+		{
+			"path": "fixed/credential.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": [
+				{
+					"circuit": "issue",
+					"input": "arg:id",
+					"reason": "public credential id"
+				},
+				{
+					"circuit": "verifyAdult",
+					"input": "arg:id",
+					"reason": "public credential id"
+				},
+				{
+					"circuit": "verifyAdult",
+					"input": "witness:patient_age",
+					"reason": "fact patient_age >= 18 only"
+				}
+			]
+		}
+	]
+}

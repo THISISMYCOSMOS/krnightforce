@@ -144,3 +144,15 @@ describe("zero-config setup search", () => {
 		expect(f[0]).toMatchObject({ kind: "EXPOSED", failure: true });
 	});
 });
+
+describe("design criteria on failures", () => {
+	it("maps each failing finding to the criteria it breaks", async () => {
+		const r = await run("vault");
+		const pin = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "RECOVERABLE");
+		expect(pin?.criteria).toEqual([4, 5]);
+		const vote = findings(r, "vote", "witness:vote_choice")[0];
+		expect(vote.criteria).toEqual([7, 2]);
+		const masked = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "MASKED");
+		expect(masked?.criteria).toEqual([]);
+	}, 120_000);
+});
