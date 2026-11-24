@@ -130,7 +130,53 @@ export interface Report {
 	setup: { constructor: string; prefixes: Record<string, string[]>; witnesses: string[] };
 	units: UnitReport[];
 	pureCircuits: string[];
-	summary: { failures: number; tested: number; untestable: number; runs: number; ms: number };
+	/**
+	 * One per hidden input with `shareWith` in the leakage description: "ok" when some
+	 * circuit puts a nonce-masked or hashed value of the input on chain (a MASKED or TAG
+	 * finding), so the named party can check the opening it gets off chain; "missing"
+	 * otherwise. Not privacy failures; counted in `summary.verifierMissing`.
+	 */
+	verifierChecks: VerifierCheck[];
+	summary: {
+		failures: number;
+		tested: number;
+		untestable: number;
+		verifierMissing: number;
+		runs: number;
+		ms: number;
+	};
+}
+
+export interface VerifierCheck {
+	input: string;
+	shareWith: string;
+	status: "ok" | "missing";
+	/** Circuits where a commitment or hash of the input lands on chain. */
+	circuits: string[];
+}
+
+/** Verifier checks from the findings only (execution results), never from the source. */
+export function verifierChecks(units: UnitReport[], spec: LoadedSpec | null): VerifierCheck[] {
+	const out: VerifierCheck[] = [];
+	for (const h of spec?.spec.hidden ?? []) {
+		if (!h.shareWith) continue;
+		const circuits: string[] = [];
+		for (const u of units) {
+			const hit = u.inputs.some(
+				(i) =>
+					(i.input === h.input || i.input.startsWith(`${h.input}.`)) &&
+					i.findings.some((f) => f.onChain && (f.kind === "MASKED" || f.kind === "TAG")),
+			);
+			if (hit) circuits.push(u.circuit);
+		}
+		out.push({
+			input: h.input,
+			shareWith: h.shareWith,
+			status: circuits.length > 0 ? "ok" : "missing",
+			circuits,
+		});
+	}
+	return out;
 }
 
 export interface AttackOptions {
@@ -260,6 +306,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 			failures += i.findings.filter((f) => f.failure).length;
 		}
 	}
+	const checks = verifierChecks(units, opts.spec);
 	return {
 		tool: "proof-kit",
 		version: VERSION,
@@ -278,10 +325,12 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		},
 		units,
 		pureCircuits: c.pureCircuits,
+		verifierChecks: checks,
 		summary: {
 			failures,
 			tested,
 			untestable,
+			verifierMissing: checks.filter((x) => x.status === "missing").length,
 			runs: runner.runs,
 			ms: Math.round(performance.now() - started),
 		},

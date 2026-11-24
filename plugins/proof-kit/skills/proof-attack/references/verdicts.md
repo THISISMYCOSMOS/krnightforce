@@ -37,6 +37,12 @@ A failure is leakage outside the leakage description (`docs/design-guide.md`, ch
 
 The CLI takes `--spec <file>`; without it, `privacy-spec.json` next to the contract source is used if present (`--no-spec` turns this off).
 
+## Verifier checks
+
+For each `hidden` entry with `shareWith` in the leakage description, the report has a `verifierChecks` entry: `ok` with the circuits where a finding on that input has `onChain: true` and kind `MASKED` or `TAG` (a nonce-masked or hashed value of it lands on chain, so the named party can check the opening it gets off chain), or `missing` when there is none. Struct fields count for their parent input. These come from findings only, never from the source.
+
+A `missing` check is not a privacy failure: it does not change `failure`, `summary.failures` or the exit code. It is counted in `summary.verifierMissing` and printed as `verifier check: <input> → <party>: MISSING`. On the map, the input node shows `검증자: <party>`.
+
 ## Map colors
 
 | Color | Kinds |

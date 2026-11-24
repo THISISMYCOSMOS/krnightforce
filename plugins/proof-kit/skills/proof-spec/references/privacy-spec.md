@@ -6,7 +6,7 @@ The leakage description of one contract: what it may reveal. The attack engine r
 {
   "contract": "src/claims.compact",
   "hidden": [
-    { "input": "witness:holder_age", "range": "0..120", "why": "personal data" }
+    { "input": "witness:holder_age", "range": "0..120", "why": "personal data", "shareWith": "pharmacy" }
   ],
   "mayReveal": [
     { "circuit": "check", "input": "arg:id", "kind": "value", "why": "public lookup key" },
@@ -30,6 +30,7 @@ The leakage description of one contract: what it may reveal. The attack engine r
 - `acceptedLeakage`: unavoidable leakage the user accepts, in words (that an action happened, its time, group size). Not checked by the engine; it is part of the description the user agrees to.
 - `unlinkable`: pairs of actions that must not be linkable (checked by A3, planned).
 - `vouchedBy`: who vouches for each input (guide chapter 3). Not checked by the engine.
+- `hidden[].shareWith`: the one party that may see the value ("verifier only"). On the public ledger the value stays hidden and every failure rule applies unchanged; that party gets the opening (value + nonce) off chain and checks it against an on-chain commitment. The engine checks, from its findings, that some circuit puts a nonce-masked or hashed value of the input on chain (`verifierChecks`: `ok` or `missing`). `missing` means the verifier has nothing to check the opening against. It is not a privacy failure and does not change the exit code; it is counted in `summary.verifierMissing`.
 - A finding on a hidden input fails unless `mayReveal` covers it for that circuit.
 - Pass it with `proofkit attack <dir> --spec <file>`, or put it next to the contract source.
 - `range` is inclusive.

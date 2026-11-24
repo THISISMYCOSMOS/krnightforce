@@ -4,7 +4,8 @@
 		{
 			"input": "witness:plate_number",
 			"range": "0..9999",
-			"why": "identifies the car and its owner; the scenario uses the last four digits, a real plate space (about 3.6e8) is still enumerable offline"
+			"why": "identifies the car and its owner; the scenario uses the last four digits, a real plate space (about 3.6e8) is still enumerable offline",
+			"shareWith": "operator"
 		},
 		{
 			"input": "witness:purchase_month",
