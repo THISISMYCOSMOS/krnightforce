@@ -1,5 +1,7 @@
 # Design proposal format
 
+Before the proposal, the data inventory from step 1b (`data-inventory.md`) must be confirmed by the user.
+
 Give the design proposal in exactly these five parts, in the user's language. Fill every table from the user's answers; mark anything you assumed as "(assumed — please confirm)".
 
 ## 1. What goes where

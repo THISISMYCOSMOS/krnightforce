@@ -17,17 +17,20 @@ A contract is two things (Kachina): what it does, and what it reveals. You help 
 
 ## Pitfalls (read first)
 
-1. **The user decides what may be revealed.** Offer examples; never fill in answers for them silently.
-2. **Never present a guidance criterion (3, 9, 10, 11) as checked.** Only attack tests decide pass or fail.
-3. **A hash is not a commitment.** Never propose `persistentHash` to hide a value with a small range.
-4. **A commitment needs a fresh nonce per value**, kept by the user.
-5. **Never call a design safe.** Say which criteria the attack tests will check, and which they cannot.
+1. **The user decides what may be revealed.** Offer examples and proposals; never fill in answers for them silently.
+2. **Do not stop at what the user mentioned.** Information they did not mention (identifiers, photos, wallet addresses, metadata) still exists in their situation; put it in the inventory.
+3. **Never present a guidance criterion (3, 9, 10, 11) as checked.** Only attack tests decide pass or fail.
+4. **A hash is not a commitment.** Never propose `persistentHash` to hide a value with a small range.
+5. **A commitment needs a fresh nonce per value**, kept by the user.
+6. **Never call a design safe.** Say which criteria the attack tests will check, and which they cannot.
 
 ## Flow
 
 Start from an idea, or from an existing contract (then draft step 1 from its exported circuits, witnesses and ledger fields, and ask the user to confirm).
 
 **Step 1. What it does.** Restate the app in one sentence and list the circuits: who calls each, what it changes on the ledger. Ask "Is this right?"
+
+**Step 1b. Data inventory.** Before asking what to hide, list the information that usually exists in this situation — not only what the user mentioned — following `references/data-inventory.md`. For each item give what the user said (show / hide / not mentioned) and a proposal with a reason; anything the app does not need is proposed hidden or left off chain. Flag combinations of public items that can identify a person. Ask the user to confirm or change the table; their answer is the start of step 2.
 
 **Step 2. Four questions, one at a time, each with an example from their app:**
 1. Which values must stay hidden?
