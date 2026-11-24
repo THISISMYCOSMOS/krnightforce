@@ -1,0 +1,40 @@
+{
+  "id": "blind-hidden-raffle",
+  "compilerVersion": "0.36.0",
+  "spec": "privacy-spec.json",
+  "contracts": [
+    {
+      "path": "holed/raffle.compact",
+      "variant": "holed",
+      "expectFailures": true,
+      "findings": [
+        {"circuit": "buyTicket", "input": "witness:ticketNumber", "attack": "A2", "kind": "RECOVERABLE", "where": "ledger", "note": "Commitment nonce is the public ticketsSold counter; 1000 guesses recover the number."},
+        {"circuit": "claimPrize", "input": "witness:ticketNumber", "attack": "T2", "kind": "UNBOUND", "where": "value", "note": "Witness read twice: once for the winning check, once for the commitment."},
+        {"circuit": "claimPrize", "input": "witness:ticketNumber", "attack": "A3", "kind": "LINKABLE", "where": "ledger", "note": "Disclosed leaf equals the leaf inserted at purchase."},
+        {"circuit": "claimPrize", "input": "arg:myNonce", "attack": "A3", "kind": "LINKABLE", "where": "ledger", "note": "Purchase-slot nonce inside the disclosed leaf identifies the purchase."}
+      ],
+      "intendedDisclosures": [
+        {"circuit": "constructor", "input": "arg:drawCommit", "reason": "Public commitment to the winning number."},
+        {"circuit": "draw", "input": "arg:number", "reason": "Winning number is announced."},
+        {"circuit": "draw", "input": "arg:salt", "reason": "Revealed so anyone can check the draw commitment."},
+        {"circuit": "claimPrize", "input": "arg:payTo", "reason": "Payout address."}
+      ]
+    },
+    {
+      "path": "fixed/raffle.compact",
+      "variant": "fixed",
+      "expectFailures": false,
+      "findings": [],
+      "intendedDisclosures": [
+        {"circuit": "constructor", "input": "arg:drawCommit", "reason": "Public commitment to the winning number."},
+        {"circuit": "draw", "input": "arg:number", "reason": "Winning number is announced."},
+        {"circuit": "draw", "input": "arg:salt", "reason": "Revealed so anyone can check the draw commitment."},
+        {"circuit": "claimPrize", "input": "arg:payTo", "reason": "Payout address."},
+        {"circuit": "claimPrize", "input": "witness:ticketPath", "reason": "Only the Merkle root."},
+        {"circuit": "claimPrize", "input": "witness:ticketSalt", "reason": "Only the claim nullifier."},
+        {"circuit": "buyTicket", "input": "witness:ticketNumber", "reason": "Only inside a commitment salted with 256 random bits."},
+        {"circuit": "buyTicket", "input": "witness:ticketSalt", "reason": "Only inside the commitment hash."}
+      ]
+    }
+  ]
+}
