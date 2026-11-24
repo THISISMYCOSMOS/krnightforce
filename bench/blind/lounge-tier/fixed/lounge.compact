@@ -1,0 +1,63 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Membership-tier proof for an airport lounge (fixed design).
+// The loyalty programme (issuer) publishes salted commitments to
+// (member key, points balance) in a Merkle tree each statement period.
+// A member proves "points >= Silver threshold" against such a commitment;
+// the exact tier, balance and wallet are not revealed.
+
+export struct PointsRecord {
+  domain: Bytes<32>;
+  member: Bytes<32>;
+  points: Uint<32>;
+  salt: Bytes<32>;
+}
+
+export ledger issuer: Bytes<32>;
+export ledger statements: HistoricMerkleTree<20, Bytes<32>>;
+export ledger loungeEntries: Counter;
+
+witness issuerSecret(): Bytes<32>;
+witness memberSecret(): Bytes<32>;
+witness memberPoints(): Uint<32>;
+witness pointsSalt(): Bytes<32>;
+witness statementPath(leaf: Bytes<32>): MerkleTreePath<20, Bytes<32>>;
+
+circuit issuerKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "lounge:issuer"), sk]);
+}
+
+circuit memberKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "lounge:member"), sk]);
+}
+
+circuit pointsLeaf(member: Bytes<32>, points: Uint<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<PointsRecord>(PointsRecord {
+    domain: pad(32, "lounge:points:v1"),
+    member: member,
+    points: points,
+    salt: salt
+  });
+}
+
+constructor() {
+  issuer = disclose(issuerKey(issuerSecret()));
+}
+
+// The loyalty programme publishes a member's statement commitment.
+export circuit publishStatement(leaf: Bytes<32>): [] {
+  assert(issuerKey(issuerSecret()) == issuer, "only the loyalty programme");
+  statements.insert(disclose(leaf));
+}
+
+export circuit enterLounge(): [] {
+  const p = memberPoints();
+  const leaf = pointsLeaf(memberKey(memberSecret()), p, pointsSalt());
+  const path = statementPath(leaf);
+  assert(path.leaf == leaf, "path does not match statement");
+  assert(statements.checkRoot(disclose(merkleTreePathRoot<20, Bytes<32>>(path))), "unknown statement");
+  assert(p >= 5000, "Silver status or above required");
+  loungeEntries.increment(1);
+}

@@ -1,0 +1,24 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Membership-tier proof for an airport lounge: members with Silver status
+// (>= 5,000 points) or better may enter. Gold is >= 20,000 points.
+
+export ledger silverEntries: Counter;
+export ledger goldEntries: Counter;
+export ledger lastVisitor: ZswapCoinPublicKey;
+
+witness memberPoints(): Uint<32>;
+
+export circuit enterLounge(): [] {
+  const p = memberPoints();
+  assert(p >= 5000, "Silver status or above required");
+  // separate statistics per tier for the lounge operator
+  if (disclose(p >= 20000)) {
+    goldEntries.increment(1);
+  } else {
+    silverEntries.increment(1);
+  }
+  lastVisitor = disclose(ownPublicKey());
+}

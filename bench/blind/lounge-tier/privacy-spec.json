@@ -1,0 +1,24 @@
+{
+  "contract": "lounge.compact",
+  "hidden": [
+    {"input": "witness:memberPoints", "range": "0..2000000", "why": "Points balance. The lounge only needs 'Silver or above' (>= 5000); the exact balance and whether the member is Gold reveal travel volume / spending."},
+    {"input": "witness:memberSecret", "why": "Member identity; lounge entries must not identify or link the member."},
+    {"input": "witness:pointsSalt", "why": "Commitment randomness."},
+    {"input": "witness:statementPath", "why": "Leaf position identifies the member's statement."},
+    {"input": "witness:issuerSecret", "why": "Issuer signing secret."}
+  ],
+  "mayReveal": [
+    {"circuit": "enterLounge", "input": "witness:memberPoints", "kind": "fact", "fact": "memberPoints >= 5000", "why": "Entry itself proves Silver-or-above status."},
+    {"circuit": "enterLounge", "input": "witness:statementPath", "kind": "value", "why": "Only the Merkle root, already public."},
+    {"circuit": "publishStatement", "input": "arg:leaf", "kind": "value", "why": "A salted commitment computed off chain by the issuer."}
+  ],
+  "acceptedLeakage": [
+    "Total number of lounge entries.",
+    "Transaction fee payer / submission time are outside the contract (the lounge kiosk can submit on the member's behalf).",
+    "Without a nullifier, a member can share their secret with a friend; accepted for this design (the gate staff check a boarding pass)."
+  ],
+  "unlinkable": [
+    {"actions": ["enterLounge", "enterLounge"], "why": "Two visits by the same member must not be linkable."},
+    {"actions": ["publishStatement", "enterLounge"], "why": "A visit must not point at the member's statement."}
+  ]
+}
