@@ -343,6 +343,17 @@ export async function runCorpus(root: string): Promise<CorpusBench> {
 			failures: 0,
 			byKind: {},
 		};
+		// Third-party contract code runs while loading and attacking; anything it prints
+		// could name the repo in a public log, so console output is muted meanwhile.
+		const saved = {
+			log: console.log,
+			info: console.info,
+			warn: console.warn,
+			error: console.error,
+			debug: console.debug,
+		};
+		const mute = () => {};
+		console.log = console.info = console.warn = console.error = console.debug = mute;
 		try {
 			const r = await attack(await loadCompiled(dir), { spec: null });
 			row.circuits = r.units.filter((u) => u.circuit !== "<constructor>").length;
@@ -362,6 +373,8 @@ export async function runCorpus(root: string): Promise<CorpusBench> {
 			row.error = String((e as Error).message ?? e)
 				.split("\n")[0]
 				.slice(0, 200);
+		} finally {
+			Object.assign(console, saved);
 		}
 		rows.push(row);
 	}

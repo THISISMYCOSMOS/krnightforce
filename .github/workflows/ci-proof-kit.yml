@@ -67,7 +67,7 @@ jobs:
       - run: npm run check
       - run: npm test
       # Scenario pairs against their answer keys, reusing the compiled fixtures.
-      - run: npx tsx src/cli.ts bench --scenarios ../../bench/scenarios --compiled test/fixtures/managed/scenarios --no-compile
+      - run: npm run build && node dist/cli.js bench --scenarios ../../bench/scenarios --compiled test/fixtures/managed/scenarios --no-compile
 
   plugin:
     name: Plugin (shell + JSON)

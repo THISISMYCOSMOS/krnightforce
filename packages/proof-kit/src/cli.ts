@@ -107,8 +107,13 @@ async function benchMain(args: string[]): Promise<number> {
 	let noCompile = false;
 	let json = false;
 	let out: string | undefined;
+	const withValue = ["--scenarios", "--compiled", "--corpus", "--out"];
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
+		if (withValue.includes(a) && (args[i + 1] === undefined || args[i + 1].startsWith("--"))) {
+			process.stderr.write(`${a} needs a value\n${USAGE}\n`);
+			return 2;
+		}
 		if (a === "--scenarios") scenarios = args[++i];
 		else if (a === "--compiled") compiled = args[++i];
 		else if (a === "--corpus") corpus = args[++i];
@@ -124,8 +129,18 @@ async function benchMain(args: string[]): Promise<number> {
 		const b = await runCorpus(corpus);
 		// Stdout gets aggregates only; rows may name third-party repos.
 		process.stdout.write(json ? `${JSON.stringify(b.totals, null, 2)}\n` : corpusMarkdown(b));
-		if (out) writeFileSync(out, `${JSON.stringify(b, null, 2)}\n`);
-		return 0;
+		if (out) {
+			try {
+				writeFileSync(out, `${JSON.stringify(b, null, 2)}\n`);
+			} catch {
+				// Do not print the error: its message carries only the out path, but keep the log clean.
+				process.stderr.write("cannot write the --out file\n");
+				return 2;
+			}
+		}
+		// Nothing measured is a broken run, not a clean one.
+		const t = b.totals;
+		return t.contracts === 0 || t.loadErrors === t.contracts ? 2 : 0;
 	}
 	const b = await runScenarios({ scenarios, compiled, noCompile });
 	const text = json ? `${JSON.stringify(b, null, 2)}\n` : scenarioMarkdown(b);
