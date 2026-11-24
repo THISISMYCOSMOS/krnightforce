@@ -140,7 +140,7 @@
   - A1·A2·A5, 소금 가림 판정, 부분 노출 판정, T2 분할 witness(2026-11-24)
   - 설정 없이 시작 상태 찾기: 생성자 인자 맞추기, 회로를 두 개까지 먼저 부르기, witness 사이의 관계 맞추기
   - CLI `proofkit attack`
-  - 시험 41개 통과
+  - 시험 49개 통과
 - 레포 뼈대: 플러그인, CI(컴파일러 0.36.0을 GitHub API 없이 직접 받음), bench 형식
 - 설계 가이드([design-guide.md](design-guide.md)), 패턴 예제(`docs/design-guide/examples/`), 컴파일러 실험 40개(p01~p29와 변형. p29·p29b는 실행 실험)
 - 회로 설계(`/proof:spec`)
@@ -149,7 +149,7 @@
   - 엔진이 실패마다 어긴 기준 번호를 붙임(`criteria`)
   - 건강 정보 예제로 설계 → 공격까지 끝까지 확인([따라 하기](design-guide/walkthrough-health-credential.md))
 - 시나리오 8쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship, split-witness. car-club과 scholarship은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
-- 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 8쌍이 정답표대로 나오고(고친 판 실패 0), 시험 41개가 통과합니다.
+- 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 8쌍이 정답표대로 나오고(고친 판 실패 0), 시험 49개가 통과합니다(시각화·검토 수정 포함, 2026-11-24 기준).
 - 분할 witness 공격(T2, 2026-11-24): 한 호출에서 두 번 이상 읽힌 witness마다, 첫 읽기 또는 나머지 읽기에 다른 값을 주고 돌립니다. 통과하면 `UNBOUND` 실패입니다. 시나리오 `split-witness`가 정답표로 확인하고, 고치기 전 판 3쌍의 7개 읽기를 모두 잡습니다. 시험 계약 vault의 `register()`에서도 하나 찾았습니다(PIN 해시와 커밋이 서로 다른 PIN을 담을 수 있음).
 - 실제 구축 기록(사용자의 해커톤 앱)에서 교훈 13개를 일반화했습니다(2026-11-24, `docs/design-guide/lessons-first-build.md`). 스킬의 정보 목록·패턴·용어·설계안 형식에 반영했습니다. 내용: 공개 대상 셋(누구나·검증자만·본인), 처리 메타데이터, 증명이 보장하지 않는 것, witness 한 번 읽기 등.
 - witness를 두 번 읽으면 서로 다른 입력이 된다는 것을 실행으로 확인했습니다(실험 p29·p29b). 같은 실수가 시나리오 고친 판 3쌍(health-credential, car-club, scholarship)에 있어 고쳤습니다. 진단 스크립트 `scripts/count-witness-reads.mts`로 0건을 확인했습니다.
@@ -157,7 +157,7 @@
   - witness 관계를 찾을 때, 출처를 바꿔도 대상이 따라가는지 실행으로 확인합니다. 전에는 선언 순서에 따라 엉뚱한 출처를 골라 거짓 실패 6건이 났습니다.
   - T2가 읽기를 witness와 인자 단위로 셉니다. 인자가 다르면 서로 다른 입력입니다.
   - A1이 바꿔 볼 수 없던 입력에서 T2 실패가 나오면, 그 입력을 "시험함"으로 세고 출력에도 보여 줍니다.
-  - 시험 44개 통과.
+  - 시험 3개 추가. 시각화와 합친 뒤 전체 49개 통과.
 - 시작 상태 찾기: 사전 호출을 두 개까지 찾고, 숫자 인자를 최댓값으로도 시도합니다(2026-11-24, car-club의 `proveHeldYear`). witness 사이의 관계(회원 키 = `owner_key_of(회원 비밀)`)도 맞춥니다. 실패한 회로가 읽는 witness를 출처 후보로 먼저 둡니다. 인자 둘을 섞는 관계는 아직입니다.
 
 **남은 것**: 아래 다음 작업, 그리고 3~4주차 항목.
@@ -183,7 +183,7 @@
      - 시나리오는 컴파일된 파일을 저장하지 않으니, compactc 0.36.0이 필요합니다(CI에는 있음).
 2. **(완료 2026-11-24) 시각화(`/proof:map`).** 엔진 JSON으로 "숨긴 값 → 회로 → 체인에 남는 것" Mermaid 그림을 4색(숨김·증명만·공개·위험, 회색 시험 못 함)으로 그립니다. 구멍 판과 고친 판을 나란히 보여 줍니다.
    - 완료 기준: 건강 정보 예제의 두 판 그림에서 구멍 판은 나이·질병 코드가 위험 색, 고친 판은 증명만 색입니다.
-   - 결과: `proofkit map`(`src/map.ts`)과 스킬 `proof:proof-map`. 색은 보고서의 `failure`·`disclosure`·`kind`·`status`에서만 가져옵니다. 완료 기준과 split-witness 구멍 판(`birth_year` 위험)을 시험 `test/map.test.ts`가 확인하고, 전체 시험 46개가 통과합니다. 예: `docs/design-guide/map-health-credential.md`.
+   - 결과: `proofkit map`(`src/map.ts`)과 스킬 `proof:proof-map`. 색은 보고서의 `failure`·`disclosure`·`kind`·`status`에서만 가져옵니다. 완료 기준과 split-witness 구멍 판(`birth_year` 위험)을 시험 `test/map.test.ts`가 확인하고, 전체 시험 5개를 추가했습니다. 예: `docs/design-guide/map-health-credential.md`.
 3. **A2 보완(assert 오라클).** 회로 밖에서 만든 해시를 회로 안에서 `assert(hash(witness) == 저장값)`으로만 확인하는 계약이 대상입니다. 공격자는 후보를 넣어 회로를 돌려 보고, 통과하는 후보를 찾습니다. 엔진도 이 방식을 씁니다.
    - 저장된 해시와 witness가 맞는 상태를 만들려면, 회로 안 해시 값 기록과 두 단계 시작 상태 찾기도 필요합니다. 두 단계 사전 호출과 witness 사이의 관계 맞추기는 2026-11-24에 들어갔습니다. 남은 것은 회로 안 해시 값 기록입니다.
    - 완료 기준: 직접 만든 같은 유형의 시나리오에서 숨긴 값을 복원합니다. 해커톤 사례에서 실제로 나온 실수입니다.
