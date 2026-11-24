@@ -1,0 +1,47 @@
+{
+	"id": "split-witness",
+	"compilerVersion": "0.36.0",
+	"contracts": [
+		{
+			"path": "holed/pass.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "redeem",
+					"input": "witness:birth_year",
+					"attack": "T2",
+					"kind": "UNBOUND",
+					"where": "value"
+				},
+				{
+					"circuit": "redeem",
+					"input": "witness:pass_secret",
+					"attack": "T2",
+					"kind": "UNBOUND",
+					"where": "value"
+				}
+			],
+			"intendedDisclosures": [
+				{
+					"circuit": "redeem",
+					"input": "arg:season",
+					"reason": "public season id"
+				}
+			]
+		},
+		{
+			"path": "fixed/pass.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": [
+				{
+					"circuit": "redeem",
+					"input": "arg:season",
+					"reason": "public season id"
+				}
+			]
+		}
+	]
+}

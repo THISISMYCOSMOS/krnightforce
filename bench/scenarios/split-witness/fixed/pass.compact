@@ -1,0 +1,41 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Members-only discount pass. The issuer records a commitment to the member's
+// birth year; the member proves "born in 2006 or earlier" once per season.
+// Each witness is read once per circuit and passed on as a value (probe p29).
+export ledger issuer_commit: Bytes<32>;
+export ledger passes: Set<Bytes<32>>;
+export ledger used: Set<Bytes<32>>;
+
+witness issuer_secret(): Bytes<32>;
+witness birth_year(): Uint<16>;
+witness pass_secret(): Bytes<32>;
+
+export pure circuit issuer_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "pass:issuer:v1"), secret]);
+}
+
+circuit pass_commitment(year: Uint<16>, secret: Bytes<32>): Bytes<32> {
+  return persistentCommit<Uint<16>>(year, secret);
+}
+
+constructor(issuer: Bytes<32>) {
+  issuer_commit = disclose(issuer);
+}
+
+export circuit issue(): [] {
+  assert(issuer_commitment(issuer_secret()) == issuer_commit, "not the issuer");
+  passes.insert(disclose(pass_commitment(birth_year(), pass_secret())));
+}
+
+export circuit redeem(season: Bytes<32>): [] {
+  const year = birth_year();
+  const secret = pass_secret();
+  assert(passes.member(disclose(pass_commitment(year, secret))), "no pass");
+  assert(disclose(year <= 2006), "too young");
+  const tag = persistentHash<Vector<3, Bytes<32>>>([pad(32, "pass:use:v1"), disclose(season), secret]);
+  assert(!used.member(disclose(tag)), "already used this season");
+  used.insert(disclose(tag));
+}

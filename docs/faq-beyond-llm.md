@@ -117,7 +117,7 @@
 
 ### Q17. 하지 않을 것
 - LLM이나 사람이 코드를 읽고 "의심" 판정을 내는 것
-- 보증 공격 T1~T3(midnight-expert와 겹쳐 제외, `docs/plan.md` 결정 기록)
+- 보증 공격 T1~T3(midnight-expert와 겹쳐 제외, `docs/plan.md` 결정 기록). 예외로, 같은 witness를 여러 번 읽는 회로의 분할 witness 공격(T2)은 넣었습니다(11/24). midnight-expert가 읽기만으로 확정하지 못한 부분이기 때문입니다.
 - 지갑, 증명 서버, 수수료(DUST)·비차폐 토큰, 네트워크 정보, 사진 같은 계약 밖 데이터의 판정. 안내만 합니다.
 - Google Cloud TEE 연동(사용자 결정으로 제외)
 

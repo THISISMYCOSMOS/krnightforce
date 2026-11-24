@@ -21,6 +21,7 @@ const LABEL: Record<string, string> = {
 	PARTIAL: "FAIL partial",
 	TAG: "tag (linkable)",
 	MASKED: "masked",
+	UNBOUND: "FAIL unbound",
 };
 
 /** Short human-readable report. Verdicts are copied from the report, never recomputed. */
@@ -57,9 +58,12 @@ export function formatText(r: Report): string {
 						: f.disclosure === "spec"
 							? `public (allowed by spec) ${f.kind.toLowerCase()}`
 							: LABEL[f.kind];
-				const where = f.onChain
-					? `${f.where} ${f.location}`
-					: "return value (goes to the caller, not on chain)";
+				const where =
+					f.kind === "UNBOUND"
+						? f.location
+						: f.onChain
+							? `${f.where} ${f.location}`
+							: "return value (goes to the caller, not on chain)";
 				const crit = f.criteria.length > 0 ? ` (criteria ${f.criteria.join(", ")})` : "";
 				lines.push(
 					`  ${i.input} (${i.type}): ${label} [${f.attack}] at ${where} — ${f.detail}${crit}`,

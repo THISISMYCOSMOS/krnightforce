@@ -30,7 +30,7 @@ Sources: Kachina (state split, leakage description), the compiler probe (`docs/d
 
 | # | Criterion | Check | Source |
 | --- | --- | --- | --- |
-| 10 | Every user-supplied input has someone who vouches for it: an issuer, an owner secret, or state the contract already holds. | guidance | Kachina: a dishonest party may set its private state arbitrarily |
+| 10 | Every user-supplied input has someone who vouches for it: an issuer, an owner secret, or state the contract already holds. | guidance; verdict T2 for one case: a witness read twice in a call (each read is a separate input) | Kachina: a dishonest party may set its private state arbitrarily |
 | 11 | Authorization proves knowledge of a secret; it never trusts `ownPublicKey()`. | guidance (assurance attacks T1-T3 are out of scope) | Probe p21; official docs "ownPublicKey() is a witness function"; OpenZeppelin `ZOwnablePK` |
 
 ## D. Write down what is revealed
@@ -49,6 +49,7 @@ The engine adds `criteria` to each failing finding:
 | `EXPOSED` at `value` or `ledger` | 1, 2 |
 | `PARTIAL` at `value` or `ledger` | 6, 2 |
 | any failing kind at `path` | 7, 2 |
+| `UNBOUND` (T2) | 10 |
 
 When reporting a failure, name the criterion and give the matching pattern from `patterns.md` (pitfall first).
 

@@ -65,6 +65,8 @@ export interface Observation {
 	/** Witnesses called during the constructor and during the circuit call. */
 	calledInConstructor: Set<string>;
 	calledInCircuit: Set<string>;
+	/** How many times each witness was read during the attacked call (not setup calls). */
+	witnessReads: Record<string, number>;
 	/**
 	 * Outputs of the runtime's hash and commitment functions during this run
 	 * (deployment and call), normalized like transcript values. Used to tell a
@@ -94,6 +96,12 @@ export interface WitnessRelation {
 export interface Assignment {
 	witnesses: Record<string, Value>;
 	args: Value[];
+	/**
+	 * Give one witness a different value on some of its reads in the attacked call
+	 * (not in setup calls): "first" replaces the first read, "rest" every later read.
+	 * Used by the split-witness attack (T2).
+	 */
+	split?: { name: string; value: Value; at: "first" | "rest" };
 }
 
 export const PK = "0".repeat(64);
@@ -318,6 +326,9 @@ export class Runner {
 	private phase: "constructor" | "circuit" = "constructor";
 	private calledInConstructor = new Set<string>();
 	private calledInCircuit = new Set<string>();
+	/** True only while the attacked call runs (after setup calls). */
+	private target = false;
+	private reads: Record<string, number> = {};
 	/** Witnesses the constructor reads; only these decide whether a deployment can be reused. */
 	private ctorWitnesses: string[] | null = null;
 	runs = 0;
@@ -339,7 +350,15 @@ export class Runner {
 				(this.phase === "constructor" ? this.calledInConstructor : this.calledInCircuit).add(
 					w.name,
 				);
-				return [ctx.privateState, this.witnessValue(w.name, this.current)];
+				const a = this.current;
+				let v = this.witnessValue(w.name, a);
+				if (this.target) {
+					const n = (this.reads[w.name] ?? 0) + 1;
+					this.reads[w.name] = n;
+					const sp = a.split;
+					if (sp && sp.name === w.name && (sp.at === "first" ? n === 1 : n > 1)) v = sp.value;
+				}
+				return [ctx.privateState, v];
 			};
 		}
 		this.contract = new c.Contract(witnesses);
@@ -441,6 +460,7 @@ export class Runner {
 			result: null,
 			calledInConstructor: d.called,
 			calledInCircuit: new Set(),
+			witnessReads: {},
 			hashes: d.hashes,
 		};
 	}
@@ -485,6 +505,8 @@ export class Runner {
 			}
 		}
 		this.calledInCircuit = new Set();
+		this.reads = {};
+		this.target = true;
 		try {
 			const res = await this.call(circuit.name, state, a.args);
 			const trace = res.context.callProofDataTrace.at(-1);
@@ -496,11 +518,16 @@ export class Runner {
 				result: normalize(res.result),
 				calledInConstructor: d.called,
 				calledInCircuit: this.calledInCircuit,
+				witnessReads: { ...this.reads },
 				hashes: new Set([...d.hashes, ...collectHashes(log)]),
 			};
 		} catch (e) {
-			return failed(errorText(e), d.called, this.calledInCircuit);
+			return {
+				...failed(errorText(e), d.called, this.calledInCircuit),
+				witnessReads: { ...this.reads },
+			};
 		} finally {
+			this.target = false;
 			g.__proofkitHashLog = undefined;
 		}
 	}
@@ -515,6 +542,7 @@ function failed(error: string, ctor: Set<string>, circ: Set<string>): Observatio
 		result: null,
 		calledInConstructor: ctor,
 		calledInCircuit: circ,
+		witnessReads: {},
 		hashes: new Set(),
 	};
 }

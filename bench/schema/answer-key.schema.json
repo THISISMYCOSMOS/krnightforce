@@ -78,7 +78,8 @@
 										"A1",
 										"A2",
 										"A3",
-										"A5"
+										"A5",
+										"T2"
 									]
 								},
 								"kind": {
@@ -86,9 +87,10 @@
 										"EXPOSED",
 										"RECOVERABLE",
 										"PARTIAL",
-										"LINKABLE"
+										"LINKABLE",
+										"UNBOUND"
 									],
-									"description": "LINKABLE is for A3 (linking), which the engine does not implement yet."
+									"description": "LINKABLE is for A3 (linking), which the engine does not implement yet. UNBOUND is for T2 (split witness): a witness read several times in one call accepts different values per read."
 								},
 								"note": {
 									"type": "string"

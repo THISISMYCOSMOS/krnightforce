@@ -76,7 +76,18 @@ describe("vault (holed)", () => {
 	it("fails the PIN hash even without a spec: it came through a hash", () => {
 		const f = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "RECOVERABLE");
 		expect(f).toMatchObject({ derived: "hash", failure: true, disclosure: null });
-		expect(r.summary.failures).toBe(1);
+		// The second failure is T2 below: the hash and the commitment read the PIN separately.
+		expect(r.summary.failures).toBe(2);
+	});
+
+	it("finds that the hash and the commitment can hold different PINs (T2, split witness)", () => {
+		const f = findings(r, "register", "witness:secret_pin").find((x) => x.attack === "T2");
+		expect(f).toMatchObject({
+			kind: "UNBOUND",
+			failure: true,
+			criteria: [10],
+			location: "2 reads",
+		});
 	});
 
 	it("with a spec that hides everything, the vote path fails too", async () => {
@@ -84,7 +95,7 @@ describe("vault (holed)", () => {
 		const s = await attack(await loadCompiled(fixture("vault")), { spec });
 		const f = findings(s, "vote", "witness:vote_choice")[0];
 		expect(f).toMatchObject({ failure: true, disclosure: null, criteria: [7, 2] });
-		expect(s.summary.failures).toBe(2);
+		expect(s.summary.failures).toBe(3);
 	}, 120_000);
 });
 

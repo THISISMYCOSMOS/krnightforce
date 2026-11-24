@@ -53,7 +53,8 @@ import {
  *   but it is the same every time the value is reused, so it can link actions (A3).
  * - MASKED: the difference also depends on another secret input (a salt or key), so it hides the value.
  */
-export type Kind = "EXPOSED" | "RECOVERABLE" | "PARTIAL" | "TAG" | "MASKED";
+/** UNBOUND: one witness read several times in a call, and the call accepts different values per read (T2). */
+export type Kind = "EXPOSED" | "RECOVERABLE" | "PARTIAL" | "TAG" | "MASKED" | "UNBOUND";
 /** ledger: constructor state. value/path: circuit transcript. result: return value (not on chain). */
 export type Where = "ledger" | "value" | "path" | "result";
 
@@ -64,7 +65,7 @@ export interface Finding {
 	where: Where;
 	/** "op 3" (transcript op index), "cell 1" (ledger field index), "shape" or "result". */
 	location: string;
-	attack: "A1" | "A2" | "A5";
+	attack: "A1" | "A2" | "A5" | "T2";
 	/** Only on-chain findings can fail. Return values go to the caller, not the chain. */
 	onChain: boolean;
 	failure: boolean;
@@ -87,6 +88,7 @@ export interface Finding {
 /** Map a failing finding to the design criteria it breaks. */
 export function criteriaFor(f: Pick<Finding, "kind" | "where" | "failure">): number[] {
 	if (!f.failure) return [];
+	if (f.kind === "UNBOUND") return [10];
 	if (f.where === "path") return [7, 2];
 	if (f.kind === "RECOVERABLE") return [4, 5];
 	if (f.kind === "EXPOSED") return [1, 2];
@@ -384,6 +386,7 @@ async function attackUnit(
 			),
 		);
 	}
+	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd);
 	return {
 		circuit: name,
 		status: "tested",
@@ -391,6 +394,93 @@ async function attackUnit(
 		runs: runner.runs - runs0,
 		ms: Math.round(performance.now() - t0),
 	};
+}
+
+/**
+ * T2, split witness. Each call to a witness function inside a circuit is a separate
+ * private input (probe p29). When the attacked call reads a witness more than once,
+ * give one read a different value (first read, or every later read) and run it. If
+ * the call still succeeds, the circuit accepted two values for what the design treats
+ * as one, e.g. the age checked against a credential and the age compared with 18.
+ * Verdict from execution only; a call that rejects every split is not reported.
+ */
+async function splitWitnessAttack(
+	c: Compiled,
+	base: Assignment,
+	baseObs: Observation,
+	observe: (a: Assignment) => Promise<Observation>,
+	inputs: InputReport[],
+	rnd: () => number,
+): Promise<void> {
+	for (const [name, reads] of Object.entries(baseObs.witnessReads)) {
+		if (reads < 2) continue;
+		const w = c.witnesses.find((x) => x.name === name);
+		if (!w) continue;
+		const baseValue = base.witnesses[name];
+		// Alternative whole-witness values: change one leaf at a time.
+		const alts: { label: string; value: Value }[] = [];
+		for (const leaf of leaves(w.type)) {
+			const label = [name, ...leaf.path].join(".");
+			const lb = getLeaf(baseValue, leaf.path);
+			const e = entropyOf(leaf, name);
+			const pool =
+				e === "secret"
+					? [altSecret(leaf, lb, rnd)]
+					: [...candidates(leaf, label, 64)].filter((v) => !same(v, lb));
+			// A few spread-out candidates: low, high and middle values reach both sides of a check.
+			const pick =
+				pool.length <= 6
+					? pool
+					: [0, 1, 2, pool.length - 1, pool.length - 2, pool.length >> 1].map((i) => pool[i]);
+			for (const v of pick) {
+				const value =
+					leaf.path.length === 0 ? v : setLeaf(structuredClone(baseValue), leaf.path, v);
+				alts.push({ label, value });
+			}
+		}
+		const accepted: { read: string; label: string; value: string }[] = [];
+		for (const at of ["rest", "first"] as const) {
+			for (const alt of alts) {
+				const o = await observe({ ...base, split: { name, value: alt.value, at } });
+				if (o.ok) {
+					accepted.push({
+						read: at === "first" ? "read 1" : `reads 2..${reads}`,
+						label: alt.label,
+						value: show(alt.value),
+					});
+					break;
+				}
+			}
+		}
+		if (accepted.length === 0) continue;
+		const finding: Finding = {
+			kind: "UNBOUND",
+			where: "value",
+			location: `${reads} reads`,
+			attack: "T2",
+			onChain: true,
+			failure: true,
+			detail: `the call reads it ${reads} times and still succeeds when ${accepted[0].read === "read 1" ? "the first read" : "the later reads"} return ${accepted[0].value} instead of ${show(baseValue)}: each read is a separate input. Read it once and pass the value`,
+			evidence: { reads, accepted },
+			derived: null,
+			disclosure: null,
+			criteria: [10],
+		};
+		const id = `witness:${name}`;
+		let report = inputs.find((i) => i.input === id || i.input.startsWith(`${id}.`));
+		if (!report) {
+			report = {
+				input: id,
+				type: typeToString(w.type),
+				entropy: "guessable",
+				status: "tested",
+				samples: 0,
+				findings: [],
+			};
+			inputs.push(report);
+		}
+		report.findings.push(finding);
+	}
 }
 
 function skeleton(spec: InputSpec): Value {

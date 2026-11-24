@@ -45,7 +45,7 @@ Each pattern lists the pitfall first, then the fix, then the attack that checks 
 
 - Pitfall: a circuit that calls the same witness twice (once in an ownership check, once in a nullifier) gets two independent private inputs. The prover can return the real secret to the check and anything to the nullifier, so "one per owner" stops holding. It compiles. Probe p29 runs it: three repeat submissions with a split witness are all accepted; tests with an honest witness never notice.
 - Fix: read it once into a local and pass that local to every use (`const s = secret(); assert(key(s) == owner); ... hash([tag, scope, s])`). Probe p29b: the same split witness is rejected.
-- Checked by: execution probe `packages/proof-kit/scripts/probe-witness-reads.mts`; diagnostic `packages/proof-kit/scripts/count-witness-reads.mts` lists witnesses read more than once per circuit call. Not yet an engine attack. Three of the seven bench scenarios had this mistake until 2026-11-24 (`docs/design-guide/lessons-first-build.md`).
+- Checked by: T2 (split witness), `UNBOUND`. Example: `bench/scenarios/split-witness`. The diagnostic `packages/proof-kit/scripts/count-witness-reads.mts` lists read counts without a verdict. Three of the seven bench scenarios had this mistake until 2026-11-24 (`docs/design-guide/lessons-first-build.md`).
 
 ## Recompute in the circuit; do not accept a result
 

@@ -1,0 +1,40 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Same pass, written the way it is easy to write: redeem calls birth_year() and
+// pass_secret() again for each use. Every call is a separate private input, so the
+// year checked against the pass and the year compared with 2006 can differ, and so
+// can the secret in the pass and the secret in the once-per-season tag. Compiles.
+export ledger issuer_commit: Bytes<32>;
+export ledger passes: Set<Bytes<32>>;
+export ledger used: Set<Bytes<32>>;
+
+witness issuer_secret(): Bytes<32>;
+witness birth_year(): Uint<16>;
+witness pass_secret(): Bytes<32>;
+
+export pure circuit issuer_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "pass:issuer:v1"), secret]);
+}
+
+circuit pass_commitment(year: Uint<16>, secret: Bytes<32>): Bytes<32> {
+  return persistentCommit<Uint<16>>(year, secret);
+}
+
+constructor(issuer: Bytes<32>) {
+  issuer_commit = disclose(issuer);
+}
+
+export circuit issue(): [] {
+  assert(issuer_commitment(issuer_secret()) == issuer_commit, "not the issuer");
+  passes.insert(disclose(pass_commitment(birth_year(), pass_secret())));
+}
+
+export circuit redeem(season: Bytes<32>): [] {
+  assert(passes.member(disclose(pass_commitment(birth_year(), pass_secret()))), "no pass");
+  assert(disclose(birth_year() <= 2006), "too young");
+  const tag = persistentHash<Vector<3, Bytes<32>>>([pad(32, "pass:use:v1"), disclose(season), pass_secret()]);
+  assert(!used.member(disclose(tag)), "already used this season");
+  used.insert(disclose(tag));
+}

@@ -10,6 +10,7 @@ Every verdict comes from executing the contract. The engine varies one hidden in
 | `RECOVERABLE` | The observation is one-to-one in the value, and trying candidates (the whole domain for small types, otherwise a dictionary up to the budget, default 12000) reproduced the base observation with the true value first. |
 | `PARTIAL` | Two different values gave the same observation (a property leaks, e.g. `x > 100`), or a different candidate matched before the true one. |
 | `MASKED` | The observation changes with the value, but also changes when only another secret input (a salt, nonce or key) changes. No enumeration is attempted. |
+| `UNBOUND` | Attack T2 (split witness). The circuit read this witness more than once in one call, and the call still succeeded when the first read, or the later reads, got a different value. Each read is a separate private input, so the value checked (against a commitment, an owner key) and the value used (in a fact, a nullifier) can differ. Always a failure, criterion 10; `mayReveal` does not cover it. `location` is the read count. |
 | `TAG` | The observation is one-to-one in the value but was not recovered: either the value is high-entropy (a key, salt, id), or a guessable value was not found within the budget (the detail says which). Same value, same tag, so it matters for linking (A3). |
 
 `where` says where the difference appeared: `value` (a value in the transcript), `path` (which ledger cell was touched, or a different sequence of operations; attack A5), `ledger` (constructor state), `result` (the circuit's return value).
@@ -48,4 +49,4 @@ The CLI takes `--spec <file>`; without it, `privacy-spec.json` next to the contr
 
 ## Scope
 
-A pass means "not reproduced by this attack list", not "safe". Fee addresses, unshielded tokens, network metadata, wallets and proving servers are out of scope.
+T2 covers only witnesses read more than once in a call. Other false-witness, impersonation and caller-time attacks (T1–T3) are out of scope (midnight-expert covers them). A pass means "not reproduced by this attack list", not "safe". Fee addresses, unshielded tokens, network metadata, wallets and proving servers are out of scope.
