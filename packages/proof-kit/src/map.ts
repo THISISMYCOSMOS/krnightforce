@@ -55,10 +55,11 @@ const kindText = (f: Finding) => `${f.attack} ${f.kind.toLowerCase()}`;
 
 /** The color of one input in one circuit, from its report fields only. */
 export function classify(input: InputReport): { cls: MapClass; why: string } {
-	if (input.status === "untestable") return { cls: "untested", why: input.reason ?? "" };
 	const pick = (fs: Finding[]) => [...new Set(fs.map(kindText))].join(", ");
+	// A failure outranks "not tested": T2 can fail an input whose whole-value runs all failed.
 	const failures = input.findings.filter((f) => f.failure);
 	if (failures.length > 0) return { cls: "risk", why: pick(failures) };
+	if (input.status === "untestable") return { cls: "untested", why: input.reason ?? "" };
 	const disclosed = input.findings.filter((f) => f.disclosure !== null);
 	if (disclosed.length > 0) {
 		const how = disclosed.some((f) => f.disclosure === "spec")
