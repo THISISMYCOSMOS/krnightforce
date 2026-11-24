@@ -47,6 +47,6 @@ Start from an idea, or from an existing contract (then draft step 1 from its exp
 
 **Step 4. Agreement.** Ask the user to agree to part 2. Then write `privacy-spec.json` next to the contract in the format of `references/privacy-spec.md`.
 
-**Step 5. Check and fix.** After the contract is written, run `/proof:attack`. For each failure, name the criterion from its `criteria` field, give the matching pattern from `references/patterns.md` (pitfall first, then the fix), and rerun until the tests pass. Then run `/proof:map` (planned) to draw the result.
+**Step 5. Check and fix.** After the contract is written, run `/proof:attack`. For each failure, name the criterion from its `criteria` field, give the matching pattern from `references/patterns.md` (pitfall first, then the fix), and rerun until the tests pass. Then run `/proof:map` to draw the result.
 
 Worked examples of all five steps: `docs/design-guide/walkthrough-health-credential.md`; from a one-line request, with step 1 planning the situation: `docs/design-guide/walkthrough-car-club.md`, `docs/design-guide/walkthrough-scholarship.md`.

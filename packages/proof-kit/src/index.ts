@@ -26,5 +26,14 @@ export type {
 export { loadCompiled, Runner } from "./harness.js";
 export type { Compiled } from "./harness.js";
 export { formatText } from "./format.js";
+export {
+	CLASS_LABEL,
+	classify,
+	inputClasses,
+	mapRows,
+	renderMapMarkdown,
+	renderMermaid,
+} from "./map.js";
+export type { MapClass, MapRow } from "./map.js";
 export { covers, findSpec, loadSpec } from "./spec.js";
 export type { LoadedSpec, PrivacySpec } from "./spec.js";

@@ -14,22 +14,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { writeFileSync } from "node:fs";
-import { attack } from "./attack.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { type Report, attack } from "./attack.js";
 import { formatText } from "./format.js";
 import { loadCompiled } from "./harness.js";
+import { renderMapMarkdown } from "./map.js";
 import { findSpec, loadSpec } from "./spec.js";
 
 const USAGE = `usage: proofkit attack <compiled-dir> [--source <file.compact>] [--json] [--out <file>]
                          [--spec <privacy-spec.json> | --no-spec]
                          [--budget <n>] [--seed <n>] [--circuit <name>]...
 
+       proofkit map <report.json | compiled-dir> [<report.json | compiled-dir>]
+                    [--title <a> [--title <b>]] [--heading <h>] [--spec <file> | --no-spec] [--out <file.md>]
+
 Without --spec, privacy-spec.json next to the contract source is used if present.
+\`map\` draws the privacy map (Mermaid in Markdown) from attack reports; give two to put a
+holed and a fixed version side by side. A compiled-dir is attacked first.
 <compiled-dir> is the output directory given to \`compact compile\` (it holds contract/ and compiler/).
 Exit code: 0 no failures, 1 failures found, 2 usage or load error.`;
 
 async function main(argv: string[]): Promise<number> {
 	const [cmd, dir, ...rest] = argv;
+	if (cmd === "map" && dir) return mapMain([dir, ...rest]);
 	if (cmd !== "attack" || !dir) {
 		process.stderr.write(`${USAGE}\n`);
 		return 2;
@@ -82,6 +89,52 @@ async function main(argv: string[]): Promise<number> {
 	if (out) writeFileSync(out, `${text}\n`);
 	else process.stdout.write(`${text}\n`);
 	return report.summary.failures > 0 ? 1 : 0;
+}
+
+async function mapMain(args: string[]): Promise<number> {
+	const sources: string[] = [];
+	const titles: string[] = [];
+	let heading: string | undefined;
+	let specPath: string | undefined;
+	let noSpec = false;
+	let out: string | undefined;
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--title") titles.push(args[++i]);
+		else if (a === "--heading") heading = args[++i];
+		else if (a === "--spec") specPath = args[++i];
+		else if (a === "--no-spec") noSpec = true;
+		else if (a === "--out") out = args[++i];
+		else if (a.startsWith("--")) {
+			process.stderr.write(`unknown option ${a}\n${USAGE}\n`);
+			return 2;
+		} else sources.push(a);
+	}
+	if (sources.length < 1 || sources.length > 2) {
+		process.stderr.write(`${USAGE}\n`);
+		return 2;
+	}
+	const maps: { title: string; report: Report }[] = [];
+	for (const [i, src] of sources.entries()) {
+		let report: Report;
+		try {
+			if (src.endsWith(".json")) report = JSON.parse(readFileSync(src, "utf8")) as Report;
+			else {
+				const compiled = await loadCompiled(src);
+				const p = noSpec ? null : (specPath ?? findSpec(compiled.sourceFile));
+				report = await attack(compiled, { spec: p ? loadSpec(p) : null });
+			}
+		} catch (e) {
+			process.stderr.write(`cannot read ${src}: ${(e as Error).message}\n`);
+			return 2;
+		}
+		const fallback = sources.length === 2 ? (i === 0 ? "구멍 판" : "고친 판") : "결과";
+		maps.push({ title: titles[i] ?? fallback, report });
+	}
+	const md = renderMapMarkdown(maps, heading);
+	if (out) writeFileSync(out, md);
+	else process.stdout.write(md);
+	return 0;
 }
 
 main(process.argv.slice(2)).then(
