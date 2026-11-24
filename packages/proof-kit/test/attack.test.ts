@@ -15,7 +15,7 @@
 
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { type Report, attack, loadCompiled } from "../src/index.js";
+import { type Report, attack, formatText, loadCompiled } from "../src/index.js";
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./fixtures/managed/${name}`, import.meta.url));
@@ -213,4 +213,41 @@ describe("design criteria on failures", () => {
 		const masked = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "MASKED");
 		expect(masked?.criteria).toEqual([]);
 	}, 120_000);
+});
+
+describe("review fixes: relation source, parameterized witnesses, T2 on untestable inputs", () => {
+	it("picks the relation source the target really follows, not the first declared", async () => {
+		// Same as car-club fixed with car_nonce declared before owner_secret: both have the
+		// same default, so both unblock the base runs; only owner_secret is the real source.
+		const r = await run("relation_order");
+		expect(r.setup.witnesses).toEqual(["owner_key = owner_key_of(owner_secret())"]);
+		expect(r.summary.failures).toBe(0);
+		expect(r.summary.untestable).toBe(0);
+	}, 120_000);
+
+	it("counts reads per witness and arguments: different arguments are different inputs", async () => {
+		const r = await run("witness_args");
+		const t2 = (circuit: string) =>
+			(r.units.find((u) => u.circuit === circuit)?.inputs ?? []).flatMap((i) =>
+				i.findings.filter((f) => f.attack === "T2"),
+			);
+		expect(t2("twoNotes")).toEqual([]);
+		expect(t2("sameNonceTwice")).toHaveLength(1);
+		expect(t2("sameNonceTwice")[0]).toMatchObject({
+			kind: "UNBOUND",
+			location: "2 reads of note_nonce(0)",
+		});
+	}, 60_000);
+
+	it("reports and shows T2 on an input A1 could not vary, and counts it as tested", async () => {
+		const r = await run("split_untestable");
+		const input = r.units
+			.find((u) => u.circuit === "check")
+			?.inputs.find((i) => i.input === "witness:year");
+		expect(input?.status).toBe("tested");
+		expect(input?.reason).toContain("tested by T2");
+		expect(input?.findings.map((f) => f.kind)).toEqual(["UNBOUND"]);
+		expect(r.summary).toMatchObject({ failures: 1, untestable: 0 });
+		expect(formatText(r)).toContain("witness:year (Uint<0..65536>): FAIL unbound [T2]");
+	}, 60_000);
 });

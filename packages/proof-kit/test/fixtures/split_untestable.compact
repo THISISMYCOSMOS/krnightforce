@@ -1,0 +1,21 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// T2 fixture: the first read of year() is bound to the stored value, so every
+// whole-value change fails and A1 cannot test it. The second read is unbound:
+// T2 must report it, and the input must count as tested, not untestable.
+export ledger stored: Uint<16>;
+export ledger ok: Counter;
+
+witness year(): Uint<16>;
+
+export circuit setStored(y: Uint<16>): [] {
+  stored = disclose(y);
+}
+
+export circuit check(): [] {
+  assert(year() == stored, "bad");
+  assert(disclose(year() <= 2006), "young");
+  ok.increment(1);
+}
