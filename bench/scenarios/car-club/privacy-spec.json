@@ -17,8 +17,16 @@
 			"why": "shown only when the member chooses to"
 		},
 		{
+			"input": "witness:owner_key",
+			"why": "the member's key; links the card to its owner"
+		},
+		{
+			"input": "witness:owner_secret",
+			"why": "member secret"
+		},
+		{
 			"input": "witness:car_nonce",
-			"why": "commitment nonce, also the member card secret"
+			"why": "commitment nonce"
 		},
 		{
 			"input": "witness:operator_secret",

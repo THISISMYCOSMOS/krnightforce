@@ -31,6 +31,7 @@ export function formatText(r: Report): string {
 		`compiler ${r.compilerVersion}, runtime ${r.runtimeVersion}, seed ${r.options.seed}, budget ${r.options.budget}`,
 	);
 	if (r.setup.constructor !== "defaults") lines.push(`setup: constructor ${r.setup.constructor}`);
+	for (const w of r.setup.witnesses ?? []) lines.push(`setup: witness ${w}`);
 	for (const [k, v] of Object.entries(r.setup.prefixes))
 		lines.push(`setup: ${k} runs after ${v.join(", ")}`);
 	for (const u of r.units) {

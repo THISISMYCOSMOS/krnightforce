@@ -21,20 +21,29 @@ witness operator_secret(): Bytes<32>;
 witness car_model(): Uint<16>;
 witness purchase_month(): Uint<16>;
 witness plate_number(): Uint<32>;
-// The nonce is also the member's card secret: only the operator and the member know it.
+// The member's key, given to the operator off chain at registration.
+witness owner_key(): Bytes<32>;
+// The member's secret; owner_key = owner_key_of(owner_secret).
+witness owner_secret(): Bytes<32>;
 witness car_nonce(): Bytes<32>;
 
 export pure circuit operator_commitment(secret: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "carclub:operator:v1"), secret]);
 }
 
+export pure circuit owner_key_of(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "carclub:owner:v1"), secret]);
+}
+
 // Criterion 4, 5: a commitment with a fresh nonce per car record. The owner's
-// name is never on chain: the operator checks it off chain.
-circuit record(): Bytes<32> {
-  return persistentCommit<Vector<3, Bytes<32>>>([
+// name is never on chain: the operator checks it off chain. The record holds the
+// member's key, so only the member can prove it (criterion 11).
+circuit record(owner: Bytes<32>): Bytes<32> {
+  return persistentCommit<Vector<4, Bytes<32>>>([
     car_model() as Field as Bytes<32>,
     purchase_month() as Field as Bytes<32>,
-    plate_number() as Field as Bytes<32>
+    plate_number() as Field as Bytes<32>,
+    owner
   ], car_nonce());
 }
 
@@ -60,7 +69,7 @@ export circuit registerCar(id: Bytes<32>): [] {
   const tag = plate_tag();
   assert(!plate_tags.member(disclose(tag)), "car already registered");
   plate_tags.insert(disclose(tag));
-  cars.insert(disclose(id), disclose(record()));
+  cars.insert(disclose(id), disclose(record(owner_key())));
 }
 
 // The operator moves the club calendar forward (public, months since 2000-01).
@@ -69,10 +78,10 @@ export circuit setMonth(m: Uint<16>): [] {
   current_month = disclose(m);
 }
 
-// The member proves the record is theirs by opening the commitment.
+// The member proves the record is theirs with the secret behind the stored key.
 circuit owns(id: Bytes<32>): [] {
   assert(cars.member(disclose(id)), "unknown card");
-  assert(cars.lookup(disclose(id)) == record(), "not your car");
+  assert(cars.lookup(disclose(id)) == record(owner_key_of(owner_secret())), "not your car");
 }
 
 // Criterion 6: the model is revealed on purpose.

@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type CType, fromInfo, fromRuntimeString } from "./types.js";
-import { type Value, defaultValue, prng, show } from "./values.js";
+import { type Value, defaultValue, prng, same, show } from "./values.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: the runtime and compiled contracts are untyped JS here.
 type Any = any;
@@ -77,6 +77,17 @@ export interface Observation {
 export interface SetupCall {
 	circuit: string;
 	args: Value[];
+}
+
+/**
+ * A witness whose value is a function of another witness in a real deployment,
+ * e.g. the owner key stored at registration is `ownerKeyOf(owner_secret)`.
+ */
+export interface WitnessRelation {
+	target: string;
+	source: string;
+	label: string;
+	fn: (x: Value) => Value;
 }
 
 /** Per-run input assignment: witness name → value, and circuit argument values in order. */
@@ -316,21 +327,34 @@ export class Runner {
 		/** Constructor arguments as a function of the assignment (see setup.ts). */
 		private readonly ctorPlan: (a: Assignment) => Value[] = () =>
 			c.constructorArgs.map((x) => x.value),
+		/** Witnesses derived from other witnesses (see setup.ts). */
+		readonly relations: WitnessRelation[] = [],
 	) {
 		const rnd = prng(11);
 		const witnesses: Record<string, Any> = {};
+		for (const w of c.witnesses) this.defaults[w.name] = defaultValue(w.type, w.name, rnd);
+		for (const r of relations) this.defaults[r.target] = r.fn(this.defaults[r.source]);
 		for (const w of c.witnesses) {
-			this.defaults[w.name] = defaultValue(w.type, w.name, rnd);
 			witnesses[w.name] = (ctx: Any) => {
 				(this.phase === "constructor" ? this.calledInConstructor : this.calledInCircuit).add(
 					w.name,
 				);
-				const v =
-					w.name in this.current.witnesses ? this.current.witnesses[w.name] : this.defaults[w.name];
-				return [ctx.privateState, v];
+				return [ctx.privateState, this.witnessValue(w.name, this.current)];
 			};
 		}
 		this.contract = new c.Contract(witnesses);
+	}
+
+	/**
+	 * A witness value under an assignment. A derived witness follows its source
+	 * (an attack that varies the owner secret also changes the owner key), unless
+	 * the assignment varies the derived witness itself.
+	 */
+	private witnessValue(name: string, a: Assignment): Value {
+		const own = name in a.witnesses ? a.witnesses[name] : this.defaults[name];
+		const r = this.relations.find((x) => x.target === name);
+		if (!r || !same(own, this.defaults[name])) return own;
+		return r.fn(this.witnessValue(r.source, a));
 	}
 
 	defaultWitness(name: string): Value {
@@ -339,9 +363,7 @@ export class Runner {
 
 	private deployKey(a: Assignment): string {
 		const names = this.ctorWitnesses ?? this.c.witnesses.map((w) => w.name);
-		const w = names
-			.map((n) => show(n in a.witnesses ? a.witnesses[n] : this.defaults[n]))
-			.join("|");
+		const w = names.map((n) => show(this.witnessValue(n, a))).join("|");
 		return `${w}#${show(this.ctorArgs(a))}`;
 	}
 
@@ -355,7 +377,9 @@ export class Runner {
 
 	/** The assignment with defaults filled in for witnesses it does not mention. */
 	complete(a: Assignment): Assignment {
-		return { witnesses: { ...this.defaults, ...a.witnesses }, args: a.args };
+		const witnesses: Record<string, Value> = {};
+		for (const w of this.c.witnesses) witnesses[w.name] = this.witnessValue(w.name, a);
+		return { witnesses, args: a.args };
 	}
 
 	private async deploy(a: Assignment): Promise<{

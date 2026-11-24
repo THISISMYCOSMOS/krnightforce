@@ -170,6 +170,28 @@ describe("zero-config setup search", () => {
 	});
 });
 
+describe("setup search: witness relations and two setup calls", () => {
+	let r: Report;
+	beforeAll(async () => {
+		r = await attack(await loadCompiled(fixture("scenarios/car-club__fixed")));
+	}, 120_000);
+
+	it("makes the stored owner key a function of the member secret the proof circuits read", () => {
+		expect(r.setup.witnesses).toEqual(["owner_key = owner_key_of(owner_secret())"]);
+	});
+
+	it("runs a circuit that needs registration and a calendar update first", () => {
+		expect(r.setup.prefixes.proveHeldYear).toEqual(["registerCar", "setMonth"]);
+	});
+
+	it("tests every input, including the member secret", () => {
+		const untested = r.units.flatMap((u) =>
+			u.inputs.filter((i) => i.status !== "tested").map((i) => `${u.circuit} ${i.input}`),
+		);
+		expect(untested).toEqual([]);
+	});
+});
+
 describe("design criteria on failures", () => {
 	it("maps each failing finding to the criteria it breaks", async () => {
 		const r = await run("vault");

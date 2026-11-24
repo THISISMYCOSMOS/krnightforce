@@ -38,7 +38,7 @@
 | 차 모델 | 공개 | 공개 (`showCar`에서만) | `disclose(car_model())` |
 | 차번호 | 숨김 | 숨김. 중복 방지 태그는 운영자 비밀과 섞음 | 커밋 + `persistentHash([도메인, 운영자 비밀, 번호])` |
 | 구매일 | 숨김 | 숨김. "1년 이상"이라는 사실만 공개 | 커밋 + `disclose(구매월 + 12 <= 동호회 달)` |
-| 실소유주 | 숨김 | 장부에 올리지 않음. 운영자가 장부 밖에서 확인 | 없음 |
+| 실소유주 | 숨김 | 이름은 장부에 올리지 않음. 운영자가 장부 밖에서 확인. 카드 주인 증명은 회원 키로 | 커밋 안에 회원 키 `hash(회원 비밀)` |
 | 회원 카드 id | 말 안 함 | 공개 (조회 키) | `disclose(id)` |
 | 연식·색상 | 말 안 함 | 올리지 않음 (모델과 합치면 차가 특정됨) | 없음 |
 | 지갑 주소 | 말 안 함 | 쓰지 않음 | `ownPublicKey()` 미사용 (기준 11) |
@@ -65,14 +65,14 @@ Midnight 장치 설명:
 
 | 데이터 | 공개 장부 | 사용자 기기 | 이유 |
 | --- | --- | --- | --- |
-| 모델, 구매월, 차번호 | 커밋만 | 값 + nonce (회원) | 숨김 (기준 1, 4, 5) |
+| 모델, 구매월, 차번호, 회원 키 | 커밋만 | 값 + nonce + 회원 비밀 (회원) | 숨김 (기준 1, 4, 5) |
 | 차번호 중복 방지 | 운영자 비밀을 섞은 태그 | 운영자 비밀 (운영자) | 전수 대입 차단 (기준 4) |
 | 동호회 달 | 그대로 | — | 공개 달력. 블록 시각과 구매 시각을 비교하지 않으려는 것 |
 | 카드 id | 그대로 | — | 공개 조회 키 |
 
-nonce는 회원의 카드 비밀도 겸합니다. 커밋을 열 수 있는 사람(운영자와 회원)만 `showCar`와 `proveHeldYear`를 부를 수 있습니다.
-- 운영자도 nonce를 압니다. 하지만 운영자는 이미 보증 주체라서 추가로 얻는 권한이 없습니다.
-- 운영자의 대리 증명까지 막으려면 회원 키를 커밋에 넣어야 합니다. 이 방식은 지금 엔진이 시작 상태를 찾지 못합니다(아래 "엔진 메모").
+회원은 등록 때 회원 키 `owner_key_of(회원 비밀)`만 운영자에게 건넵니다. 운영자는 이 키를 차량 기록 커밋에 넣습니다.
+- `showCar`와 `proveHeldYear`는 회원 비밀로 키를 다시 계산해 기록과 맞춥니다.
+- 그래서 운영자도 회원 대신 증명할 수 없습니다(기준 11). `ownPublicKey()`는 쓰지 않습니다.
 
 **2. 회로마다 드러나는 것 (누출 설명)**
 
@@ -89,7 +89,7 @@ nonce는 회원의 카드 비밀도 겸합니다. 커밋을 열 수 있는 사�
 
 **3. 값마다 쓸 부품**
 
-- **차량 기록**: `persistentCommit([모델, 구매월, 차번호], nonce)`(기준 4, 5)
+- **차량 기록**: `persistentCommit([모델, 구매월, 차번호, 회원 키], nonce)`(기준 4, 5)
 - **중복 방지 태그**: `persistentHash([도메인, 운영자 비밀, 차번호])`
   - 함정: `persistentHash([도메인, 차번호])`도 컴파일됩니다. 하지만 번호판 경우의 수(약 3.6억)는 오프라인에서 전부 대입할 수 있습니다.
 - **1년 보유**: `disclose(구매월 + 12 <= current_month)`. `current_month`는 운영자가 올리는 공개 장부 값입니다.
@@ -121,6 +121,7 @@ nonce는 회원의 카드 비밀도 겸합니다. 커밋을 열 수 있는 사�
 같은 설계에 쉬운 실수 두 개를 넣은 판이 [holed/club.compact](../../bench/scenarios/car-club/holed/club.compact)입니다. 엔진 출력 중 실패는 다음과 같습니다.
 
 ```
+setup: witness owner_key = owner_key_of(owner_secret())
 setup: showCar runs after registerCar
 setup: proveHeldYear runs after registerCar
 [registerCar]
@@ -128,7 +129,7 @@ setup: proveHeldYear runs after registerCar
   witness:plate_number: FAIL recoverable [A2] at value op 9 — recovered the hidden value 37 after 38 candidates (criteria 4, 5)
 [proveHeldYear]
   witness:purchase_month: FAIL recoverable [A2] at value op 11 — recovered the hidden value 37 after 38 candidates (criteria 4, 5)
-3 failure(s); 18 input(s) tested, 0 untestable
+3 failure(s); 21 input(s) tested, 0 untestable
 ```
 
 > **스킬**: 실패 두 가지를 기준에 맞춰 설명하면 이렇습니다.
@@ -142,17 +143,19 @@ setup: proveHeldYear runs after registerCar
 설계대로 만든 판 [fixed/club.compact](../../bench/scenarios/car-club/fixed/club.compact)의 결과입니다.
 
 ```
+setup: witness owner_key = owner_key_of(owner_secret())
 setup: showCar runs after registerCar
 setup: proveHeldYear runs after registerCar, setMonth
-0 failure(s); 18 input(s) tested, 0 untestable
+0 failure(s); 21 input(s) tested, 0 untestable
 ```
 
-**엔진 메모** (이 예제로 엔진을 고친 것과 남은 한계):
+**엔진 메모** (이 예제로 엔진에 넣은 것):
 
-- **시작 상태 찾기를 넓혔습니다.** `proveHeldYear`는 차 등록과 달 설정이 둘 다 먼저 있어야 돌아갑니다.
-  - 그래서 사전 호출을 두 개까지 찾고, 숫자 인자를 최댓값으로도 시도하게 했습니다(`src/setup.ts`).
-  - 그래서 고친 판은 달을 최댓값으로 둔 상태, 즉 "1년 이상"이 참인 쪽만 시험합니다.
-- **두 witness 사이의 관계는 아직 맞추지 못합니다.**
-  - 예: 등록 때 회원 키 = `hash(회원 비밀)`, 증명 때 회원 비밀로 다시 계산
-  - 이런 관계가 필요한 설계는 "시험 못 함"으로 나옵니다.
-  - 그래서 이번 설계는 nonce를 카드 비밀로 썼습니다. 회원 키 방식이 더 강한 설계이며, 엔진이 이 관계를 찾게 되면 바꿀 수 있습니다.
+- **witness 사이의 관계 맞추기.** 등록 때 넣는 `owner_key`와 증명 때 다시 계산하는 `owner_key_of(owner_secret())`가 같아야 회원 회로가 돌아갑니다.
+  - 엔진은 실패한 회로가 읽는 witness를 출처 후보로 먼저 두고, `pure` 회로나 `persistentHash`로 이어지는 관계를 하나씩 시도합니다(최대 3개).
+  - 찾은 관계는 `setup: witness ...` 줄로 보여 줍니다(`src/setup.ts`).
+  - 공격 중 `owner_secret`을 바꾸면 `owner_key`도 따라 바뀝니다. 그래서 회원 비밀도 시험 대상이 됩니다.
+- **사전 호출 두 개.** `proveHeldYear`는 차 등록과 달 설정이 둘 다 먼저 있어야 돌아갑니다.
+  - 그래서 사전 호출을 두 개까지 찾고, 숫자 인자를 최댓값으로도 시도합니다.
+  - 고친 판은 달을 최댓값으로 둔 상태, 즉 "1년 이상"이 참인 쪽만 시험합니다.
+- **아직 못 하는 것.** 두 witness를 섞는 관계(예: `hash(a, b)`)는 찾지 않습니다. 이런 관계가 필요한 계약은 "시험 못 함"으로 나옵니다.

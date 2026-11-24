@@ -125,7 +125,7 @@ export interface Report {
 	/** The leakage description used, or null (zero-config rule). */
 	spec: string | null;
 	/** How the engine reached a state where calls run (zero-config setup search). */
-	setup: { constructor: string; prefixes: Record<string, string[]> };
+	setup: { constructor: string; prefixes: Record<string, string[]>; witnesses: string[] };
 	units: UnitReport[];
 	pureCircuits: string[];
 	summary: { failures: number; tested: number; untestable: number; runs: number; ms: number };
@@ -269,6 +269,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		spec: opts.spec?.path ?? null,
 		setup: {
 			constructor: setup.constructor,
+			witnesses: setup.witnesses,
 			prefixes: Object.fromEntries(
 				[...setup.prefixes].map(([k, v]) => [k, v.map((x) => x.circuit)]),
 			),

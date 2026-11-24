@@ -20,6 +20,7 @@ import {
 	PK,
 	Runner,
 	type SetupCall,
+	type WitnessRelation,
 } from "./harness.js";
 import { type CType, typeToString } from "./types.js";
 import { type Value, baseLeafValue, leaves, prng, same, setLeaf } from "./values.js";
@@ -40,6 +41,8 @@ export interface Setup {
 	runner: Runner;
 	constructor: string;
 	prefixes: Map<string, SetupCall[]>;
+	/** Witness relations the setup assumed, e.g. "owner_key = ownerKeyOf(owner_secret())". */
+	witnesses: string[];
 }
 
 export function hashName(s: string): number {
@@ -132,19 +135,98 @@ export function ctorPlans(c: Compiled): CtorPlan[] {
 	return plans.slice(0, 48);
 }
 
-/** Pick the constructor plan under which the most units run, then a setup call for the rest. */
+/** Ways one witness can be a function of another: a pure circuit, or persistentHash. */
+export function witnessRelations(c: Compiled): WitnessRelation[] {
+	const out: WitnessRelation[] = [];
+	for (const b of c.witnesses) {
+		for (const a of c.witnesses) {
+			if (a === b) continue;
+			for (const p of c.pureFns) {
+				if (key(p.arg) === key(a.type) && key(p.result) === key(b.type))
+					out.push({ target: b.name, source: a.name, label: `${p.name}(${a.name}())`, fn: p.fn });
+			}
+			const isB32 = (t: CType) => t.kind === "bytes" && t.length === 32;
+			if (isB32(a.type) && isB32(b.type)) {
+				const B32 = new c.rt.CompactTypeBytes(32);
+				out.push({
+					target: b.name,
+					source: a.name,
+					label: `persistentHash(${a.name}())`,
+					fn: (x) => c.rt.persistentHash(B32, x),
+				});
+			}
+		}
+	}
+	return out;
+}
+
+interface Attempt {
+	runner: Runner;
+	label: string;
+	ok: Set<string>;
+	prefixes: Map<string, SetupCall[]>;
+	/** Circuits that still cannot run, with or without setup calls. */
+	missing: number;
+	/** Witnesses those circuits read before failing. */
+	reads: Set<string>;
+}
+
+/**
+ * Pick the constructor plan under which the most units run, then setup calls for the
+ * rest. If some circuits still cannot run, try making one witness a function of
+ * another (greedily, up to three relations): a contract that stores
+ * `ownerKeyOf(secret)` at registration and recomputes it later needs both to agree.
+ */
 export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
-	const base = (_r: Runner, circuit: CircuitSpec): Assignment => ({
+	let best = await attempt(c, seed, ctorPlans(c), []);
+	const relations: WitnessRelation[] = [];
+	while (best.missing > 0 && relations.length < 3) {
+		// Try sources the failing circuits read first: a member circuit that recomputes
+		// ownerKeyOf(owner_secret()) reads owner_secret, not the operator's secret.
+		const reads = best.reads;
+		const all = witnessRelations(c).sort(
+			(x, y) => Number(reads.has(y.source)) - Number(reads.has(x.source)),
+		);
+		const plan = ctorPlans(c).filter((p) => p.label === best.label);
+		let step: { a: Attempt; r: WitnessRelation } | null = null;
+		for (const r of all) {
+			// One relation per target, and no cycles through earlier relations.
+			if (relations.some((x) => x.target === r.target || x.source === r.target)) continue;
+			if (relations.some((x) => x.target === r.source)) continue;
+			const a = await attempt(c, seed, plan, [...relations, r]);
+			if (a.missing < (step?.a.missing ?? best.missing)) step = { a, r };
+			if (step?.a.missing === 0) break;
+		}
+		if (!step) break;
+		relations.push(step.r);
+		best = step.a;
+	}
+	best.runner.runs = 0;
+	return {
+		runner: best.runner,
+		constructor: best.label,
+		prefixes: best.prefixes,
+		witnesses: relations.map((r) => `${r.target} = ${r.label}`),
+	};
+}
+
+async function attempt(
+	c: Compiled,
+	seed: number,
+	plans: CtorPlan[],
+	relations: WitnessRelation[],
+): Promise<Attempt> {
+	const base = (circuit: CircuitSpec): Assignment => ({
 		witnesses: {},
 		args: baseArgs(circuit, prng(unitSeed(seed, circuit.name))),
 	});
 	let best: { runner: Runner; label: string; ok: Set<string> } | null = null;
-	for (const p of ctorPlans(c)) {
-		const runner = new Runner(c, p.plan);
+	for (const p of plans) {
+		const runner = new Runner(c, p.plan, relations);
 		const ok = new Set<string>();
 		if ((await runner.observeConstructor({ witnesses: {}, args: [] })).ok) ok.add("<constructor>");
 		for (const circuit of c.circuits) {
-			if ((await runner.observeCall(circuit, base(runner, circuit))).ok) ok.add(circuit.name);
+			if ((await runner.observeCall(circuit, base(circuit))).ok) ok.add(circuit.name);
 		}
 		if (!best || ok.size > best.ok.size) best = { runner, label: p.label, ok };
 		if (ok.size === c.circuits.length + 1) break;
@@ -163,23 +245,29 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 		args.map((v, i) =>
 			s.args[i].type.kind === "uint" ? (s.args[i].type as { max: bigint }).max : v,
 		);
+	let missing = 0;
+	const reads = new Set<string>();
 	search: for (const circuit of c.circuits) {
 		if (chosen.ok.has(circuit.name)) continue;
+		const lone = await chosen.runner.observeCall(circuit, base(circuit));
+		for (const w of lone.calledInCircuit) reads.add(w);
 		for (const seq of candidates) {
 			for (const variant of [false, true]) {
 				const prefix = seq.map((s) => {
-					const args = base(chosen.runner, s).args;
+					const args = base(s).args;
 					return { circuit: s.name, args: variant ? atMax(s, args) : args };
 				});
-				if (variant && prefix.every((p, i) => same(p.args, base(chosen.runner, seq[i]).args)))
-					continue;
-				if ((await chosen.runner.observeCall(circuit, base(chosen.runner, circuit), prefix)).ok) {
+				if (variant && prefix.every((p, i) => same(p.args, base(seq[i]).args))) continue;
+				const o = await chosen.runner.observeCall(circuit, base(circuit), prefix);
+				for (const w of o.calledInCircuit) reads.add(w);
+				if (o.ok) {
 					prefixes.set(circuit.name, prefix);
 					continue search;
 				}
 			}
 		}
+		missing++;
 	}
-	chosen.runner.runs = 0;
-	return { runner: chosen.runner, constructor: chosen.label, prefixes };
+	if (!chosen.ok.has("<constructor>")) missing++;
+	return { ...chosen, prefixes, missing, reads };
 }
