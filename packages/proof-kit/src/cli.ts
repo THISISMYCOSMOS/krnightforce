@@ -16,6 +16,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { type Report, attack } from "./attack.js";
+import { corpusMarkdown, runCorpus, runScenarios, scenarioMarkdown } from "./bench.js";
 import { formatText } from "./format.js";
 import { loadCompiled } from "./harness.js";
 import { renderMapMarkdown } from "./map.js";
@@ -28,7 +29,14 @@ const USAGE = `usage: proofkit attack <compiled-dir> [--source <file.compact>] [
        proofkit map <report.json | compiled-dir> [<report.json | compiled-dir>]
                     [--title <a> [--title <b>]] [--heading <h>] [--spec <file> | --no-spec] [--out <file.md>]
 
+       proofkit bench [--scenarios <dir>] [--compiled <dir>] [--no-compile] [--json] [--out <file>]
+       proofkit bench --corpus <dir> [--json] [--out <private-file>]
+
 Without --spec, privacy-spec.json next to the contract source is used if present.
+\`bench\` checks each scenario pair in bench/scenarios against its answer.json (compiling into
+.proofkit-cache/bench with $COMPACTC, compactc or compact); exit 1 if any key is not met.
+\`bench --corpus\` attacks every compiled contract under <dir> without a spec and prints aggregates
+only; per-contract rows (which may name third-party repos) go to --out, meant for private/.
 \`map\` draws the privacy map (Mermaid in Markdown) from attack reports; give two to put a
 holed and a fixed version side by side. A compiled-dir is attacked first.
 <compiled-dir> is the output directory given to \`compact compile\` (it holds contract/ and compiler/).
@@ -37,6 +45,7 @@ Exit code: 0 no failures, 1 failures found, 2 usage or load error.`;
 async function main(argv: string[]): Promise<number> {
 	const [cmd, dir, ...rest] = argv;
 	if (cmd === "map" && dir) return mapMain([dir, ...rest]);
+	if (cmd === "bench") return benchMain(argv.slice(1));
 	if (cmd !== "attack" || !dir) {
 		process.stderr.write(`${USAGE}\n`);
 		return 2;
@@ -89,6 +98,40 @@ async function main(argv: string[]): Promise<number> {
 	if (out) writeFileSync(out, `${text}\n`);
 	else process.stdout.write(`${text}\n`);
 	return report.summary.failures > 0 ? 1 : 0;
+}
+
+async function benchMain(args: string[]): Promise<number> {
+	let scenarios = "bench/scenarios";
+	let compiled = ".proofkit-cache/bench";
+	let corpus: string | undefined;
+	let noCompile = false;
+	let json = false;
+	let out: string | undefined;
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--scenarios") scenarios = args[++i];
+		else if (a === "--compiled") compiled = args[++i];
+		else if (a === "--corpus") corpus = args[++i];
+		else if (a === "--no-compile") noCompile = true;
+		else if (a === "--json") json = true;
+		else if (a === "--out") out = args[++i];
+		else {
+			process.stderr.write(`unknown option ${a}\n${USAGE}\n`);
+			return 2;
+		}
+	}
+	if (corpus) {
+		const b = await runCorpus(corpus);
+		// Stdout gets aggregates only; rows may name third-party repos.
+		process.stdout.write(json ? `${JSON.stringify(b.totals, null, 2)}\n` : corpusMarkdown(b));
+		if (out) writeFileSync(out, `${JSON.stringify(b, null, 2)}\n`);
+		return 0;
+	}
+	const b = await runScenarios({ scenarios, compiled, noCompile });
+	const text = json ? `${JSON.stringify(b, null, 2)}\n` : scenarioMarkdown(b);
+	if (out) writeFileSync(out, text);
+	else process.stdout.write(text);
+	return b.totals.keysMet === b.totals.scenarios ? 0 : 1;
 }
 
 async function mapMain(args: string[]): Promise<number> {

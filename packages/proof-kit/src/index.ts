@@ -24,6 +24,22 @@ export type {
 	VerifierCheck,
 	Where,
 } from "./attack.js";
+export {
+	checkAgainstAnswer,
+	corpusMarkdown,
+	findCompiled,
+	runCorpus,
+	runScenarios,
+	scenarioMarkdown,
+} from "./bench.js";
+export type {
+	Answer,
+	AnswerContract,
+	ContractCheck,
+	CorpusBench,
+	CorpusRow,
+	ScenarioBench,
+} from "./bench.js";
 export { loadCompiled, Runner } from "./harness.js";
 export type { Compiled } from "./harness.js";
 export { formatText } from "./format.js";
