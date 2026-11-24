@@ -1,0 +1,17 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+export ledger owner: Bytes<32>;
+export ledger used: Set<Bytes<32>>;
+witness secret(): Bytes<32>;
+export pure circuit key(s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "p29:owner"), s]);
+}
+constructor(o: Bytes<32>) { owner = disclose(o); }
+// Reads the secret once and uses it for both checks.
+export circuit claim(scope: Bytes<32>): [] {
+  const s = secret();
+  assert(key(s) == owner, "not owner");
+  const n = persistentHash<Vector<3, Bytes<32>>>([pad(32, "p29:null"), disclose(scope), s]);
+  assert(!used.member(disclose(n)), "used");
+  used.insert(disclose(n));
+}

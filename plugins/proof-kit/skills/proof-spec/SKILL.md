@@ -23,6 +23,11 @@ A contract is two things (Kachina): what it does, and what it reveals. You help 
 4. **A hash is not a commitment.** Never propose `persistentHash` to hide a value with a small range.
 5. **A commitment needs a fresh nonce per value**, kept by the user.
 6. **Never call a design safe.** Say which criteria the attack tests will check, and which they cannot.
+7. **Read each secret witness once** per circuit and reuse the local; two calls are two independent inputs (probe p29).
+8. **Recompute results in the circuit.** Committing to a value computed elsewhere fixes it but proves nothing.
+9. **Say what the proof does not guarantee** (real-world truth of inputs, completeness of submission, deletion) before designing circuits. First-time builders often assume a proof covers these.
+
+Lessons from a real build (Korean): `docs/design-guide/lessons-first-build.md`.
 
 ## Flow
 

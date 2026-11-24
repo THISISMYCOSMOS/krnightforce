@@ -159,3 +159,18 @@ setup: proveHeldYear runs after registerCar, setMonth
   - 그래서 사전 호출을 두 개까지 찾고, 숫자 인자를 최댓값으로도 시도합니다.
   - 고친 판은 달을 최댓값으로 둔 상태, 즉 "1년 이상"이 참인 쪽만 시험합니다.
 - **아직 못 하는 것.** 두 witness를 섞는 관계(예: `hash(a, b)`)는 찾지 않습니다. 이런 관계가 필요한 계약은 "시험 못 함"으로 나옵니다.
+
+## 수정 기록 (2026-11-24)
+
+처음 판에서는 세 회로가 witness를 두 번 읽었습니다.
+- `showCar`의 `car_model()`: 등록과 다른 모델을 공개할 수 있었습니다.
+- `proveHeldYear`의 `purchase_month()`: 1년 배지를 위조할 수 있었습니다.
+- `registerCar`의 `operator_secret()`, `plate_number()`: 중복 방지 태그를 우회할 수 있었습니다.
+
+- **원인**: 회로 안에서 같은 witness를 두 번 부르면 서로 다른 두 비공개 입력이 됩니다(실험 p29). 그래서 커밋 확인에 쓴 값과 공개한 사실에 쓴 값이 달라도 됐습니다.
+- **고친 방법**: 이제 각 witness를 회로 맨 앞에서 한 번 읽고, 보조 회로에는 값으로 넘깁니다.
+- **확인**:
+  - 숨김 시험(엔진 결과)은 바뀌지 않았습니다.
+  - `packages/proof-kit/scripts/count-witness-reads.mts`로 모든 회로가 witness를 한 번씩만 읽는 것을 확인했습니다.
+- **출처**: 실제 구축 기록에서 찾은 교훈입니다(`lessons-first-build.md` 6번).
+

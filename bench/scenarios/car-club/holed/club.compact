@@ -38,24 +38,27 @@ export pure circuit owner_key_of(secret: Bytes<32>): Bytes<32> {
 // Criterion 4, 5: a commitment with a fresh nonce per car record. The owner's
 // name is never on chain: the operator checks it off chain. The record holds the
 // member's key, so only the member can prove it (criterion 11).
-circuit record(owner: Bytes<32>): Bytes<32> {
+// Helpers take values, not witness calls: each witness is read once per exported
+// circuit (probe p29), so the value checked against the record is the value used.
+circuit record(model: Uint<16>, month: Uint<16>, plate: Uint<32>, owner: Bytes<32>,
+               nonce: Bytes<32>): Bytes<32> {
   return persistentCommit<Vector<4, Bytes<32>>>([
-    car_model() as Field as Bytes<32>,
-    purchase_month() as Field as Bytes<32>,
-    plate_number() as Field as Bytes<32>,
+    model as Field as Bytes<32>,
+    month as Field as Bytes<32>,
+    plate as Field as Bytes<32>,
     owner
-  ], car_nonce());
+  ], nonce);
 }
 
-circuit only_operator(): [] {
-  assert(operator_commitment(operator_secret()) == operator_commit, "not the operator");
+circuit check_operator(secret: Bytes<32>): [] {
+  assert(operator_commitment(secret) == operator_commit, "not the operator");
 }
 
 // Mistake: anyone can hash every plate number until one matches the tag.
-circuit plate_tag(): Bytes<32> {
+circuit plate_tag(plate: Uint<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([
     pad(32, "carclub:plate:v1"),
-    plate_number() as Field as Bytes<32>
+    plate as Field as Bytes<32>
   ]);
 }
 
@@ -65,36 +68,40 @@ constructor(operator: Bytes<32>) {
 
 // The operator checks the registration papers off chain, then records the car.
 export circuit registerCar(id: Bytes<32>): [] {
-  only_operator();
-  const tag = plate_tag();
+  check_operator(operator_secret());
+  const plate = plate_number();
+  const tag = plate_tag(plate);
   assert(!plate_tags.member(disclose(tag)), "car already registered");
   plate_tags.insert(disclose(tag));
-  cars.insert(disclose(id), disclose(record(owner_key())));
+  cars.insert(disclose(id), disclose(record(car_model(), purchase_month(), plate, owner_key(), car_nonce())));
 }
 
 // The operator moves the club calendar forward (public, months since 2000-01).
 export circuit setMonth(m: Uint<16>): [] {
-  only_operator();
+  check_operator(operator_secret());
   current_month = disclose(m);
 }
 
 // The member proves the record is theirs with the secret behind the stored key.
-circuit owns(id: Bytes<32>): [] {
+circuit owns(id: Bytes<32>, model: Uint<16>, month: Uint<16>): [] {
   assert(cars.member(disclose(id)), "unknown card");
-  assert(cars.lookup(disclose(id)) == record(owner_key_of(owner_secret())), "not your car");
+  const mine = record(model, month, plate_number(), owner_key_of(owner_secret()), car_nonce());
+  assert(cars.lookup(disclose(id)) == mine, "not your car");
 }
 
 // Criterion 6: the model is revealed on purpose.
 export circuit showCar(id: Bytes<32>): [] {
-  owns(id);
-  shown_model.insert(disclose(id), disclose(car_model()));
+  const model = car_model();
+  owns(id, model, purchase_month());
+  shown_model.insert(disclose(id), disclose(model));
 }
 
 // Mistake: blockTimeGte puts the compared time, and so the purchase month, on chain.
 export circuit proveHeldYear(id: Bytes<32>): [] {
-  owns(id);
+  const month = purchase_month();
+  owns(id, car_model(), month);
   // purchase_month counts months since 2000-01; one month is about 2629746 seconds.
-  const since = ((purchase_month() + 12) as Uint<64>) * 2629746;
+  const since = ((month + 12) as Uint<64>) * 2629746;
   // The compiler asks for disclose() here; wrapping it compiles and publishes the time.
   assert(blockTimeGte(disclose((946684800 + since) as Uint<64>)), "held less than a year");
   veterans.insert(disclose(id));

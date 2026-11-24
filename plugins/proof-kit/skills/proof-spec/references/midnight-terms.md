@@ -16,6 +16,8 @@ Use these terms in the design, each with a one-line explanation the first time. 
 | --- | --- | --- |
 | circuit (`export circuit`) | A contract entry point. Calling it creates a transaction with a zero-knowledge proof. | One user action. Which circuit was called is visible in the transaction. |
 | `pure circuit` | A circuit without ledger access; also callable off-chain by the DApp. | Helpers such as computing a commitment before deployment. |
+| witness call | Each call to a witness function inside a circuit is a separate private input, even with the same name. | Read a secret once and reuse the local (probe p29). |
+| deployment | One deployed contract has one address. | The deployment unit is a linking unit: a contract per user ties all that user's actions together. |
 | zero-knowledge proof | Proof that the circuit ran correctly on some private inputs, without revealing them. Built by the proof server. | Lets the chain check rules on hidden data. |
 | public transcript | The list of ledger operations the call performs (which cells it reads and writes, and the values). Goes on chain with the proof. | Exactly what proof-kit compares between runs. |
 | proof server | Generates the proof; receives the witness values. Local by default. | A remote proof server sees hidden values (out of scope for attack tests). |
@@ -29,6 +31,8 @@ Use these terms in the design, each with a one-line explanation the first time. 
 | `persistentCommit(value, rand)` | Commitment: hides `value` while `rand` is random and secret; can be checked later by someone who knows both. | Store hidden values this way (criterion 4, 5). `transientCommit`/`transientHash` are not for ledger storage. |
 | nullifier | A tag derived from a secret, published to mark "this one-time action happened" without saying whose. | Mix a domain tag and a scope (event id, round) so tags from different scopes do not link (criterion 8). |
 | `HistoricMerkleTree` + `MerkleTreePath` + `merkleTreePathRoot` + `checkRoot` | A set of commitments on the ledger; a member proves "my commitment is in the set" with a path supplied as a witness, without revealing which one. | Anonymous membership. The anonymity set is the tree size (criterion 9). |
+| opening | The value(s) and nonce behind a commitment. Whoever holds the opening can recompute the commitment and check it. | Give the opening off chain to the one party who may see the values ("verifier only"); the ledger keeps only the commitment. |
+| domain tag | A fixed constant mixed into a hash (`pad(32, "app:state:v1")`). | Different tags for different kinds of hash (record vs node, rule vs state) keep one kind from passing as another. |
 | selective disclosure | An issuer commits to a whole record; the holder later discloses only chosen fields, proving they come from that record. | Show some attributes, prove they are genuine, hide the rest. |
 
 ## Identity and time

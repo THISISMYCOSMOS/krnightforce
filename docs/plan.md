@@ -149,6 +149,8 @@
   - 건강 정보 예제로 설계 → 공격까지 끝까지 확인([따라 하기](design-guide/walkthrough-health-credential.md))
 - 시나리오 7쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship. 뒤의 둘은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
 - 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 7쌍이 정답표대로 나오고(고친 판 실패 0), 시험 38개가 통과합니다.
+- 실제 구축 기록(사용자의 해커톤 앱)에서 교훈 13개를 일반화했습니다(2026-11-24, `docs/design-guide/lessons-first-build.md`). 스킬의 정보 목록·패턴·용어·설계안 형식에 반영했습니다. 내용: 공개 대상 셋(누구나·검증자만·본인), 처리 메타데이터, 증명이 보장하지 않는 것, witness 한 번 읽기 등.
+- witness를 두 번 읽으면 서로 다른 입력이 된다는 것을 실행으로 확인했습니다(실험 p29·p29b). 같은 실수가 시나리오 고친 판 3쌍(health-credential, car-club, scholarship)에 있어 고쳤습니다. 진단 스크립트 `scripts/count-witness-reads.mts`로 0건을 확인했습니다.
 - 시작 상태 찾기: 사전 호출을 두 개까지 찾고, 숫자 인자를 최댓값으로도 시도합니다(2026-11-24, car-club의 `proveHeldYear`). witness 사이의 관계(회원 키 = `owner_key_of(회원 비밀)`)도 맞춥니다. 실패한 회로가 읽는 witness를 출처 후보로 먼저 둡니다. 인자 둘을 섞는 관계는 아직입니다.
 
 **남은 것**: 아래 다음 작업, 그리고 3~4주차 항목.
@@ -223,6 +225,11 @@
 - **남의 레포 측정 원자료(정답표 포함)의 비공개 보관 위치**: 지금은 세션 임시 폴더에 있어 사라질 수 있습니다.
 - **담당자·멘토 질문**(사용자가 발송): midnight-expert 메인테이너에게 플러그인 범위(엔진 패키지 동봉, Stop 훅 게이트)를 확인받는 경로, 해커톤 레포를 측정 표본으로 써도 되는지, 리뷰 기준 자료.
 - midnight-expert Credential Verification 패턴 버그 이슈: 외부에 올리는 일이라 승인이 필요합니다.
+- **witness 호출별 다른 값 시험을 엔진 공격으로 넣을지**(기획 변경 제안, 2026-11-24):
+  - 내용: midnight-expert가 읽기만으로 확정하지 못한 문제를 실행으로 확정한 사례입니다(`lessons-first-build.md` 6번).
+  - 충돌: T1~T3 제외 결정과 겹칩니다.
+  - 지금 상태: 진단 스크립트로만 있습니다.
+- **누출 설명에 "검증자에게만" 공개 대상을 넣을지**(제안): 장부 밖 opening 전달이라 엔진 판정과는 무관하고, 설계 기록용입니다.
 - 소스 파서(tree-sitter) 사용 여부: 시각화에서 줄을 연결하는 데만 씁니다.
 - PR 조건의 "단단한 수상작"을 어떻게 고를지: 원래 기획의 표현입니다. bench 정답표를 만들 때 사람 판정으로 고를 기준을 정합니다.
 

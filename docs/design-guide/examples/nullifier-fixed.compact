@@ -6,6 +6,8 @@ import CompactStandardLibrary;
 // poll id, so the same member's nullifiers in two polls look unrelated.
 // Pitfall it avoids: hashing only the secret gives the same tag in every poll,
 // which links all of one member's actions.
+// Membership is left out to keep the example small: on its own, anyone can make up
+// a secret and act. Pair it with a membership proof (Merkle tree) in real use.
 export ledger used: Set<Bytes<32>>;
 
 witness member_secret(): Bytes<32>;

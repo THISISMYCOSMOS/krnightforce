@@ -21,7 +21,7 @@ One line per circuit, plain words. This is what the user will agree to.
 | e.g. `issue(id)` | issuer | that a credential with this id was issued, and a commitment to the claim |
 | e.g. `verify(id)` | patient | that the credential with this id belongs to someone aged 18 or over |
 
-Also list the unavoidable leakage the user accepts (that a call happened, when, group size).
+Also list the unavoidable leakage the user accepts (that a call happened, when, group size, record and transaction counts), what goes to one verifier only (as an opening, off chain), and what the proof does not guarantee (that inputs happened in the real world, that all were submitted, that copies were deleted).
 
 ## 3. Building block per value
 

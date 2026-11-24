@@ -41,6 +41,42 @@ Each pattern lists the pitfall first, then the fix, then the attack that checks 
 - Examples: `docs/design-guide/examples/issuer-holed.compact`, `issuer-fixed.compact`.
 - Not covered: signature-based issuance. Its standard-library usage was not confirmed for compiler 0.36.0.
 
+## Read a secret witness once
+
+- Pitfall: a circuit that calls the same witness twice (once in an ownership check, once in a nullifier) gets two independent private inputs. The prover can return the real secret to the check and anything to the nullifier, so "one per owner" stops holding. It compiles. Probe p29 runs it: three repeat submissions with a split witness are all accepted; tests with an honest witness never notice.
+- Fix: read it once into a local and pass that local to every use (`const s = secret(); assert(key(s) == owner); ... hash([tag, scope, s])`). Probe p29b: the same split witness is rejected.
+- Checked by: execution probe `packages/proof-kit/scripts/probe-witness-reads.mts`; diagnostic `packages/proof-kit/scripts/count-witness-reads.mts` lists witnesses read more than once per circuit call. Not yet an engine attack. Three of the seven bench scenarios had this mistake until 2026-11-24 (`docs/design-guide/lessons-first-build.md`).
+
+## Recompute in the circuit; do not accept a result
+
+- Pitfall: the circuit takes a score, total or eligibility computed elsewhere and only commits to it. The commitment fixes the value but proves nothing about how it was computed (criterion 10: nobody vouches for it).
+- Fix: take the raw inputs (or the previous state's opening) as witnesses and recompute the result in the circuit; assert it equals the candidate. Use checked integer arithmetic (`Uint` with a range-checked cast), not `Field`, so totals cannot wrap around.
+
+## All records, not just one
+
+- Pitfall: a Merkle membership proof shows one record is in the set. It does not show every record was processed, in order, once.
+- Fix: put the record count inside each leaf, and assert `record.index == pathIndex(path) == cursor` per step; finish only when `cursor == count`. Use different domain tags for leaves and inner nodes (and for each kind of hash: rule, state, record) so one kind cannot pass as another.
+
+## Decide the unit of "once"
+
+- Pitfall: a nullifier built from the current state is new whenever the state changes, so "one application per period" is not enforced on chain; a nullifier built from the secret alone links every action (see scoped nullifier above).
+- Fix: put exactly the unit you mean into the nullifier: `hash([tag, period or round, secret])` for "once per period". Write the unit in the design; if it is enforced off chain, say so.
+
+## Keep what a verifier will re-check
+
+- Pitfall: a single ledger slot (`resultCommitment`) overwritten by each new submission. A verifier who stored an older opening can no longer check it against the chain.
+- Fix: key it by the submission's nullifier (`Map<nullifier, commitment>`), so each result stays checkable.
+
+## Show the verifier only
+
+- Pitfall: putting exact values on the public ledger because one party (an insurer, an office) needs them.
+- Fix: store `persistentCommit(values, nonce)` on chain and give that party the opening off chain; the party recomputes the commitment and compares. Everyone else sees only the commitment.
+
+## Plan for change at deployment
+
+- Pitfall: a value fixed in the constructor (a rule hash, an issuer key) cannot change. When the rule gets a new version, the stored state is bound to the old one and nothing can move it.
+- Fix: decide before deploying whether the value can change. If it can, add an authorized circuit that rebinds the state to the new value, and test the move.
+
 ## Membership in a group
 
 - Use a Merkle tree to prove "one of the registered members".
