@@ -412,8 +412,11 @@ async function splitWitnessAttack(
 	inputs: InputReport[],
 	rnd: () => number,
 ): Promise<void> {
-	for (const [name, reads] of Object.entries(baseObs.witnessReads)) {
+	for (const [key, reads] of Object.entries(baseObs.witnessReads)) {
+		// Reads are counted per witness and arguments: a witness that takes an argument
+		// and is called with different ones is several inputs, not one read twice.
 		if (reads < 2) continue;
+		const name = key.includes("(") ? key.slice(0, key.indexOf("(")) : key;
 		const w = c.witnesses.find((x) => x.name === name);
 		if (!w) continue;
 		const baseValue = base.witnesses[name];
@@ -441,7 +444,7 @@ async function splitWitnessAttack(
 		const accepted: { read: string; label: string; value: string }[] = [];
 		for (const at of ["rest", "first"] as const) {
 			for (const alt of alts) {
-				const o = await observe({ ...base, split: { name, value: alt.value, at } });
+				const o = await observe({ ...base, split: { key, value: alt.value, at } });
 				if (o.ok) {
 					accepted.push({
 						read: at === "first" ? "read 1" : `reads 2..${reads}`,
@@ -456,7 +459,7 @@ async function splitWitnessAttack(
 		const finding: Finding = {
 			kind: "UNBOUND",
 			where: "value",
-			location: `${reads} reads`,
+			location: key === name ? `${reads} reads` : `${reads} reads of ${key}`,
 			attack: "T2",
 			onChain: true,
 			failure: true,
@@ -478,6 +481,12 @@ async function splitWitnessAttack(
 				findings: [],
 			};
 			inputs.push(report);
+		}
+		// A1 may have found every whole-value change rejected (one read is bound by a
+		// check): T2 still tested it, so the input counts as tested, with A1's note kept.
+		if (report.status === "untestable") {
+			report.status = "tested";
+			report.reason = `A1: ${report.reason ?? "every varied run failed"}; tested by T2`;
 		}
 		report.findings.push(finding);
 	}

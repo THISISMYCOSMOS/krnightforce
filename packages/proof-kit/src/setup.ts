@@ -188,15 +188,29 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 			(x, y) => Number(reads.has(y.source)) - Number(reads.has(x.source)),
 		);
 		const plan = ctorPlans(c).filter((p) => p.label === best.label);
+		// Two sources can both unblock the base runs when their default values happen to
+		// be equal (every secret Bytes<32> starts from the same value). So a relation must
+		// also show that the target follows the source: with the source changed, the newly
+		// runnable circuits still run. Verified relations win; one that cannot be checked
+		// (no other value to try) is a fallback; one that fails the check is dropped.
 		let step: { a: Attempt; r: WitnessRelation } | null = null;
+		let fallback: { a: Attempt; r: WitnessRelation } | null = null;
 		for (const r of all) {
 			// One relation per target, and no cycles through earlier relations.
 			if (relations.some((x) => x.target === r.target || x.source === r.target)) continue;
 			if (relations.some((x) => x.target === r.source)) continue;
 			const a = await attempt(c, seed, plan, [...relations, r]);
+			if (a.missing >= best.missing) continue;
+			const verdict = await follows(c, seed, a, best, r);
+			if (verdict === false) continue;
+			if (verdict === null) {
+				if (a.missing < (fallback?.a.missing ?? best.missing)) fallback = { a, r };
+				continue;
+			}
 			if (a.missing < (step?.a.missing ?? best.missing)) step = { a, r };
 			if (step?.a.missing === 0) break;
 		}
+		step ??= fallback;
 		if (!step) break;
 		relations.push(step.r);
 		best = step.a;
@@ -208,6 +222,60 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 		prefixes: best.prefixes,
 		witnesses: relations.map((r) => `${r.target} = ${r.label}`),
 	};
+}
+
+function runnable(x: Attempt, name: string): boolean {
+	return x.ok.has(name) || x.prefixes.has(name);
+}
+
+/** Another value of the same type as `base`, or undefined when there is none to try. */
+function otherValue(t: CType, base: Value, rnd: () => number): Value | undefined {
+	if (t.kind === "bytes") {
+		const out = new Uint8Array(t.length);
+		do for (let i = 0; i < t.length; i++) out[i] = Math.floor(rnd() * 256);
+		while (same(out, base));
+		return out;
+	}
+	if (t.kind === "uint") {
+		const b = base as bigint;
+		if (b > 0n) return b - 1n;
+		return t.max > 0n ? 1n : undefined;
+	}
+	if (t.kind === "field") return (base as bigint) + 1n;
+	if (t.kind === "boolean") return !(base as boolean);
+	return undefined;
+}
+
+/**
+ * Whether the target of relation `r` really follows its source: run every circuit that
+ * `r` made runnable with the source set to another value. True if all still run, false
+ * if one fails, null if no other source value can be built.
+ */
+async function follows(
+	c: Compiled,
+	seed: number,
+	a: Attempt,
+	before: Attempt,
+	r: WitnessRelation,
+): Promise<boolean | null> {
+	const w = c.witnesses.find((x) => x.name === r.source);
+	if (!w) return null;
+	const alt = otherValue(w.type, a.runner.defaultWitness(r.source), prng(seed * 31 + 7));
+	if (alt === undefined) return null;
+	const newly = c.circuits.filter((x) => runnable(a, x.name) && !runnable(before, x.name));
+	if (newly.length === 0) return null;
+	for (const circuit of newly) {
+		const o = await a.runner.observeCall(
+			circuit,
+			{
+				witnesses: { [r.source]: alt },
+				args: baseArgs(circuit, prng(unitSeed(seed, circuit.name))),
+			},
+			a.prefixes.get(circuit.name) ?? [],
+		);
+		if (!o.ok) return false;
+	}
+	return true;
 }
 
 async function attempt(

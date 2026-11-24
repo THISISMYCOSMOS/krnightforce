@@ -46,6 +46,7 @@ export function formatText(r: Report): string {
 				lines.push(`  ${i.input} (${i.type}): UNTESTABLE — ${i.reason}`);
 				continue;
 			}
+			if (i.reason) lines.push(`  ${i.input} (${i.type}): note — ${i.reason}`);
 			if (i.findings.length === 0) {
 				lines.push(`  ${i.input} (${i.type}): hidden in ${i.samples} samples`);
 				continue;

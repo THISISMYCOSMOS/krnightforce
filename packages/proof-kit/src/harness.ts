@@ -65,7 +65,11 @@ export interface Observation {
 	/** Witnesses called during the constructor and during the circuit call. */
 	calledInConstructor: Set<string>;
 	calledInCircuit: Set<string>;
-	/** How many times each witness was read during the attacked call (not setup calls). */
+	/**
+	 * How many times each witness was read during the attacked call (not setup calls),
+	 * by read key: the witness name, or `name(args)` for a witness that takes arguments.
+	 * A parameterized witness called with different arguments is several inputs.
+	 */
 	witnessReads: Record<string, number>;
 	/**
 	 * Outputs of the runtime's hash and commitment functions during this run
@@ -99,9 +103,10 @@ export interface Assignment {
 	/**
 	 * Give one witness a different value on some of its reads in the attacked call
 	 * (not in setup calls): "first" replaces the first read, "rest" every later read.
-	 * Used by the split-witness attack (T2).
+	 * Used by the split-witness attack (T2). `key` is the read key from
+	 * `Observation.witnessReads`; only reads with that key are split.
 	 */
-	split?: { name: string; value: Value; at: "first" | "rest" };
+	split?: { key: string; value: Value; at: "first" | "rest" };
 }
 
 export const PK = "0".repeat(64);
@@ -304,6 +309,11 @@ function stubWitnesses(c: Compiled): Record<string, Any> {
 	return out;
 }
 
+/** Read key of one witness call: the name, plus the arguments if the witness takes any. */
+export function readKey(name: string, args: unknown[]): string {
+	return args.length === 0 ? name : `${name}(${args.map((x) => show(x as Value)).join(", ")})`;
+}
+
 function errorText(e: unknown): string {
 	return String((e as Error)?.message ?? e)
 		.split("\n")[0]
@@ -346,17 +356,18 @@ export class Runner {
 		for (const w of c.witnesses) this.defaults[w.name] = defaultValue(w.type, w.name, rnd);
 		for (const r of relations) this.defaults[r.target] = r.fn(this.defaults[r.source]);
 		for (const w of c.witnesses) {
-			witnesses[w.name] = (ctx: Any) => {
+			witnesses[w.name] = (ctx: Any, ...args: unknown[]) => {
 				(this.phase === "constructor" ? this.calledInConstructor : this.calledInCircuit).add(
 					w.name,
 				);
 				const a = this.current;
 				let v = this.witnessValue(w.name, a);
 				if (this.target) {
-					const n = (this.reads[w.name] ?? 0) + 1;
-					this.reads[w.name] = n;
+					const key = readKey(w.name, args);
+					const n = (this.reads[key] ?? 0) + 1;
+					this.reads[key] = n;
 					const sp = a.split;
-					if (sp && sp.name === w.name && (sp.at === "first" ? n === 1 : n > 1)) v = sp.value;
+					if (sp && sp.key === key && (sp.at === "first" ? n === 1 : n > 1)) v = sp.value;
 				}
 				return [ctx.privateState, v];
 			};

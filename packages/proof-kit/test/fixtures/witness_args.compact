@@ -1,0 +1,20 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// T2 fixture: a witness that takes an argument. Called with different arguments it is
+// several inputs (two nonces), not one input read twice. Called twice with the same
+// argument it is one input read twice, which T2 must flag.
+export ledger notes: Set<Bytes<32>>;
+
+witness note_nonce(i: Uint<8>): Bytes<32>;
+
+export circuit twoNotes(a: Uint<16>, b: Uint<16>): [] {
+  notes.insert(disclose(persistentCommit<Uint<16>>(a, note_nonce(0))));
+  notes.insert(disclose(persistentCommit<Uint<16>>(b, note_nonce(1))));
+}
+
+export circuit sameNonceTwice(a: Uint<16>, b: Uint<16>): [] {
+  notes.insert(disclose(persistentCommit<Uint<16>>(a, note_nonce(0))));
+  notes.insert(disclose(persistentCommit<Uint<16>>(b, note_nonce(0))));
+}
