@@ -1,0 +1,54 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Anonymous whistleblower inbox: enrolled staff may file one report per month.
+// The report body is encrypted to the compliance officer off chain; only its
+// hash is posted here.
+
+export enum Department { engineering, finance, sales, operations, legal }
+
+export struct MonthTag {
+  domain: Bytes<32>;
+  month: Uint<64>;
+  sk: Bytes<32>;
+}
+
+export ledger admin: Bytes<32>;
+export ledger staff: Set<Bytes<32>>;
+export ledger usedTags: Set<Bytes<32>>;
+export ledger reports: Map<Bytes<32>, Department>;
+export ledger reportCount: Counter;
+
+witness adminSecret(): Bytes<32>;
+witness staffSecret(): Bytes<32>;
+
+circuit adminKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "wb:admin"), sk]);
+}
+
+circuit staffKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "wb:staff"), sk]);
+}
+
+constructor() {
+  admin = disclose(adminKey(adminSecret()));
+}
+
+// The admin enrols a staff member's public key.
+export circuit enrol(staffPk: Bytes<32>): [] {
+  assert(adminKey(adminSecret()) == admin, "only admin");
+  staff.insert(disclose(staffPk));
+}
+
+// month: e.g. 202611 for November 2026
+export circuit submitReport(month: Uint<64>, reportHash: Bytes<32>, dept: Department): [] {
+  const sk = staffSecret();
+  assert(staff.member(disclose(staffKey(sk))), "not enrolled");
+  const tag = persistentHash<MonthTag>(MonthTag { domain: pad(32, "wb:month"), month: month, sk: sk });
+  assert(!usedTags.member(disclose(tag)), "already reported this month");
+  usedTags.insert(disclose(tag));
+  // department kept so compliance can route the report
+  reports.insert(disclose(reportHash), disclose(dept));
+  reportCount.increment(1);
+}

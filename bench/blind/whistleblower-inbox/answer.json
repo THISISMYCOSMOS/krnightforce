@@ -1,0 +1,33 @@
+{
+  "id": "blind-whistleblower-inbox",
+  "compilerVersion": "0.36.0",
+  "spec": "privacy-spec.json",
+  "contracts": [
+    {
+      "path": "holed/whistleblower.compact",
+      "variant": "holed",
+      "expectFailures": true,
+      "findings": [
+        {"circuit": "submitReport", "input": "witness:staffSecret", "attack": "A1", "kind": "EXPOSED", "where": "ledger", "note": "staffKey(sk) disclosed as the Set.member argument; equals the public roster entry, so the reporter is identified."},
+        {"circuit": "submitReport", "input": "arg:dept", "attack": "A1", "kind": "EXPOSED", "where": "ledger", "note": "Department written to the reports map."}
+      ],
+      "intendedDisclosures": [
+        {"circuit": "enrol", "input": "arg:staffPk", "reason": "Roster of eligible keys is public."},
+        {"circuit": "submitReport", "input": "arg:reportHash", "reason": "Hash of the encrypted report body."},
+        {"circuit": "submitReport", "input": "arg:month", "reason": "Month is public; its problem is that it is unbound (NOT MAPPED), not that it is revealed."}
+      ]
+    },
+    {
+      "path": "fixed/whistleblower.compact",
+      "variant": "fixed",
+      "expectFailures": false,
+      "findings": [],
+      "intendedDisclosures": [
+        {"circuit": "enrol", "input": "arg:staffPk", "reason": "Roster of eligible keys is public."},
+        {"circuit": "submitReport", "input": "arg:reportHash", "reason": "Hash of the encrypted report body."},
+        {"circuit": "submitReport", "input": "witness:staffPath", "reason": "Only the Merkle root is disclosed."},
+        {"circuit": "submitReport", "input": "witness:staffSecret", "reason": "Only the month nullifier hash(domain, month, sk) is disclosed; 256-bit secret preimage, changes every month."}
+      ]
+    }
+  ]
+}
