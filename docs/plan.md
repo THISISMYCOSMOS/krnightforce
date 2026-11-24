@@ -151,7 +151,7 @@
 - 시나리오 8쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship, split-witness. car-club과 scholarship은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
 - 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 8쌍이 정답표대로 나오고(고친 판 실패 0), 시험 49개가 통과합니다(시각화·검토 수정 포함, 2026-11-24 기준).
 - 분할 witness 공격(T2, 2026-11-24): 한 호출에서 두 번 이상 읽힌 witness마다, 첫 읽기 또는 나머지 읽기에 다른 값을 주고 돌립니다. 통과하면 `UNBOUND` 실패입니다. 시나리오 `split-witness`가 정답표로 확인하고, 고치기 전 판 3쌍의 7개 읽기를 모두 잡습니다. 시험 계약 vault의 `register()`에서도 하나 찾았습니다(PIN 해시와 커밋이 서로 다른 PIN을 담을 수 있음).
-- 실제 구축 기록(사용자의 해커톤 앱)에서 교훈 13개를 일반화했습니다(2026-11-24, `docs/design-guide/lessons-first-build.md`). 스킬의 정보 목록·패턴·용어·설계안 형식에 반영했습니다. 내용: 공개 대상 셋(누구나·검증자만·본인), 처리 메타데이터, 증명이 보장하지 않는 것, witness 한 번 읽기 등.
+- 사용자의 첫 Midnight 앱 개발 기록에서 교훈 13개를 일반화했습니다(2026-11-24, `docs/design-guide/lessons-first-build.md`). 스킬의 정보 목록·패턴·용어·설계안 형식에 반영했습니다. 내용: 공개 대상 셋(누구나·검증자만·본인), 처리 메타데이터, 증명이 보장하지 않는 것, witness 한 번 읽기 등.
 - witness를 두 번 읽으면 서로 다른 입력이 된다는 것을 실행으로 확인했습니다(실험 p29·p29b). 같은 실수가 시나리오 고친 판 3쌍(health-credential, car-club, scholarship)에 있어 고쳤습니다. 진단 스크립트 `scripts/count-witness-reads.mts`로 0건을 확인했습니다.
 - 코드 검토에서 확인된 엔진 결함 3건을 고쳤습니다(2026-11-24).
   - witness 관계를 찾을 때, 출처를 바꿔도 대상이 따라가는지 실행으로 확인합니다. 전에는 선언 순서에 따라 엉뚱한 출처를 골라 거짓 실패 6건이 났습니다.
