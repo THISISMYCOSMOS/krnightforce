@@ -5,3 +5,8 @@ coverage/
 .proofkit-cache/
 *.log
 .DS_Store
+
+# Measurement raw data (third-party repo names, answer keys). Never commit.
+# In a cloud session this folder is lost with the container: copy it to the
+# user's PC or a private repo before the session ends (docs/HANDOFF.md).
+private/
