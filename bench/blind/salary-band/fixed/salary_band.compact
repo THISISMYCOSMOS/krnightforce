@@ -1,0 +1,90 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Private salary-band attestation for job applications (fixed design).
+// HR inserts a salted commitment to (employee key, salary) into a Merkle tree.
+// The employee proves membership via a path (only the public root is revealed),
+// proves the salary lies inside the posting's band, and spends a per-posting
+// nullifier so they can apply once per posting without being linkable across
+// postings or to the issuance.
+
+export struct Band {
+  lo: Uint<32>;
+  hi: Uint<32>;
+}
+
+export struct SalaryRecord {
+  domain: Bytes<32>;
+  employee: Bytes<32>;
+  amount: Uint<32>;
+  salt: Bytes<32>;
+}
+
+export ledger issuer: Bytes<32>;
+export ledger postings: Map<Bytes<32>, Band>;
+export ledger salaryRecords: HistoricMerkleTree<16, Bytes<32>>;
+export ledger applied: Set<Bytes<32>>;
+export ledger applications: Counter;
+
+witness issuerSecret(): Bytes<32>;
+witness employeeSecret(): Bytes<32>;
+witness salary(): Uint<32>;
+witness salarySalt(): Bytes<32>;
+witness salaryPath(leaf: Bytes<32>): MerkleTreePath<16, Bytes<32>>;
+
+circuit issuerKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "salary:issuer"), sk]);
+}
+
+circuit employeeKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "salary:employee"), sk]);
+}
+
+circuit salaryLeaf(employee: Bytes<32>, amount: Uint<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<SalaryRecord>(SalaryRecord {
+    domain: pad(32, "salary:record:v1"),
+    employee: employee,
+    amount: amount,
+    salt: salt
+  });
+}
+
+constructor() {
+  issuer = disclose(issuerKey(issuerSecret()));
+}
+
+export circuit postJob(postingId: Bytes<32>, lo: Uint<32>, hi: Uint<32>): [] {
+  assert(lo <= hi, "invalid band");
+  postings.insert(disclose(postingId), Band { lo: disclose(lo), hi: disclose(hi) });
+}
+
+// HR records a salted commitment; the salt (256 random bits) is handed to the
+// employee off chain together with the amount.
+export circuit issueSalary(employee: Bytes<32>, amount: Uint<32>, salt: Bytes<32>): [] {
+  assert(issuerKey(issuerSecret()) == issuer, "only HR may issue");
+  salaryRecords.insert(disclose(salaryLeaf(employee, amount, salt)));
+}
+
+export circuit applyWithBand(postingId: Bytes<32>): [] {
+  assert(postings.member(disclose(postingId)), "unknown posting");
+  const band = postings.lookup(disclose(postingId));
+
+  // every private input is read exactly once
+  const sk = employeeSecret();
+  const s = salary();
+  const salt = salarySalt();
+
+  const leaf = salaryLeaf(employeeKey(sk), s, salt);
+  const path = salaryPath(leaf);
+  assert(path.leaf == leaf, "path does not match the record");
+  assert(salaryRecords.checkRoot(disclose(merkleTreePathRoot<16, Bytes<32>>(path))), "unknown salary record");
+
+  assert(s >= band.lo && s <= band.hi, "salary outside band");
+
+  // one application per posting; unlinkable across postings
+  const ticket = persistentHash<Vector<3, Bytes<32>>>([pad(32, "salary:apply"), postingId, sk]);
+  assert(!applied.member(disclose(ticket)), "already applied to this posting");
+  applied.insert(disclose(ticket));
+  applications.increment(1);
+}

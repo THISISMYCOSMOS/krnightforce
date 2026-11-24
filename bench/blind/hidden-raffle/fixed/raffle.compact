@@ -1,0 +1,83 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Raffle with hidden ticket numbers (fixed design).
+// Tickets are commitments with a 256-bit random salt held in a Merkle tree.
+// A claim reads the number once, proves its ticket via a Merkle path (only the
+// root is revealed) and spends a nullifier derived from the salt, so the claim
+// cannot be matched to the purchase.
+
+export struct Ticket {
+  domain: Bytes<32>;
+  number: Uint<16>;
+  salt: Bytes<32>;
+}
+
+export struct DrawSecret {
+  domain: Bytes<32>;
+  number: Uint<16>;
+  salt: Bytes<32>;
+}
+
+export ledger organizer: Bytes<32>;
+export ledger drawCommitment: Bytes<32>;
+export ledger salesOpen: Boolean;
+export ledger drawn: Boolean;
+export ledger winningNumber: Uint<16>;
+export ledger ticketsSold: Counter;
+export ledger tickets: HistoricMerkleTree<16, Bytes<32>>;
+export ledger claims: Set<Bytes<32>>;
+export ledger payouts: Set<Bytes<32>>;
+
+witness organizerSecret(): Bytes<32>;
+witness ticketNumber(): Uint<16>;
+witness ticketSalt(): Bytes<32>;
+witness ticketPath(leaf: Bytes<32>): MerkleTreePath<16, Bytes<32>>;
+
+circuit organizerKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "raffle:organizer"), sk]);
+}
+
+circuit ticketLeaf(number: Uint<16>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<Ticket>(Ticket { domain: pad(32, "raffle:ticket:v1"), number: number, salt: salt });
+}
+
+constructor(drawCommit: Bytes<32>) {
+  organizer = disclose(organizerKey(organizerSecret()));
+  drawCommitment = disclose(drawCommit);
+  salesOpen = true;
+  drawn = false;
+}
+
+export circuit buyTicket(): [] {
+  assert(salesOpen, "sales closed");
+  const n = ticketNumber();
+  assert(n < 1000, "ticket number must be 0..999");
+  tickets.insert(disclose(ticketLeaf(n, ticketSalt())));
+  ticketsSold.increment(1);
+}
+
+export circuit draw(number: Uint<16>, salt: Bytes<32>): [] {
+  assert(organizerKey(organizerSecret()) == organizer, "only organizer");
+  assert(salesOpen, "already drawn");
+  assert(persistentHash<DrawSecret>(DrawSecret { domain: pad(32, "raffle:draw"), number: number, salt: salt }) == drawCommitment, "does not match commitment");
+  salesOpen = false;
+  drawn = true;
+  winningNumber = disclose(number);
+}
+
+export circuit claimPrize(payTo: Bytes<32>): [] {
+  assert(drawn, "not drawn yet");
+  const n = ticketNumber();
+  const salt = ticketSalt();
+  const leaf = ticketLeaf(n, salt);
+  const path = ticketPath(leaf);
+  assert(path.leaf == leaf, "path does not match ticket");
+  assert(tickets.checkRoot(disclose(merkleTreePathRoot<16, Bytes<32>>(path))), "unknown ticket");
+  assert(n == winningNumber, "not a winning ticket");
+  const nul = persistentHash<Vector<2, Bytes<32>>>([pad(32, "raffle:claim"), salt]);
+  assert(!claims.member(disclose(nul)), "already claimed");
+  claims.insert(disclose(nul));
+  payouts.insert(disclose(payTo));
+}

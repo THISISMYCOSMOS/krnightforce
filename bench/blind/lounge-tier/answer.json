@@ -1,0 +1,26 @@
+{
+  "id": "blind-lounge-tier",
+  "compilerVersion": "0.36.0",
+  "spec": "privacy-spec.json",
+  "contracts": [
+    {
+      "path": "holed/lounge.compact",
+      "variant": "holed",
+      "expectFailures": true,
+      "findings": [
+        {"circuit": "enterLounge", "input": "witness:memberPoints", "attack": "A5", "kind": "PARTIAL", "where": "path", "note": "Branch on p >= 20000 selects goldEntries vs silverEntries; reveals Gold vs Silver beyond the allowed p >= 5000."}
+      ],
+      "intendedDisclosures": []
+    },
+    {
+      "path": "fixed/lounge.compact",
+      "variant": "fixed",
+      "expectFailures": false,
+      "findings": [],
+      "intendedDisclosures": [
+        {"circuit": "enterLounge", "input": "witness:statementPath", "reason": "Only the Merkle root is disclosed."},
+        {"circuit": "publishStatement", "input": "arg:leaf", "reason": "Salted commitment computed off chain by the issuer."}
+      ]
+    }
+  ]
+}

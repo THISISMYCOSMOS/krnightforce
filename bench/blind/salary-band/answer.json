@@ -1,0 +1,41 @@
+{
+  "id": "blind-salary-band",
+  "compilerVersion": "0.36.0",
+  "spec": "privacy-spec.json",
+  "contracts": [
+    {
+      "path": "holed/salary_band.compact",
+      "variant": "holed",
+      "expectFailures": true,
+      "findings": [
+        {"circuit": "issueSalary", "input": "arg:amount", "attack": "A2", "kind": "RECOVERABLE", "where": "ledger", "note": "Unsalted hash of (known employee key, salary) inserted into a public Set; salary brute-forceable over ~400k values."},
+        {"circuit": "applyWithBand", "input": "witness:salary", "attack": "A2", "kind": "RECOVERABLE", "where": "ledger", "note": "Same unsalted leaf is disclosed again as the Set.member query argument."},
+        {"circuit": "applyWithBand", "input": "witness:employeeSecret", "attack": "A3", "kind": "LINKABLE", "where": "ledger", "note": "Disclosed leaf equals the issued record and repeats across applications: links application to issuance and applications to each other."},
+        {"circuit": "applyWithBand", "input": "witness:salary", "attack": "A1", "kind": "EXPOSED", "where": "result", "note": "return disclose(s) publishes the exact salary."}
+      ],
+      "intendedDisclosures": [
+        {"circuit": "postJob", "input": "arg:postingId", "reason": "Postings are public."},
+        {"circuit": "postJob", "input": "arg:lo", "reason": "Band is public."},
+        {"circuit": "postJob", "input": "arg:hi", "reason": "Band is public."},
+        {"circuit": "applyWithBand", "input": "arg:postingId", "reason": "The posting applied to is public."}
+      ]
+    },
+    {
+      "path": "fixed/salary_band.compact",
+      "variant": "fixed",
+      "expectFailures": false,
+      "findings": [],
+      "intendedDisclosures": [
+        {"circuit": "postJob", "input": "arg:postingId", "reason": "Postings are public."},
+        {"circuit": "postJob", "input": "arg:lo", "reason": "Band is public."},
+        {"circuit": "postJob", "input": "arg:hi", "reason": "Band is public."},
+        {"circuit": "applyWithBand", "input": "arg:postingId", "reason": "The posting applied to is public."},
+        {"circuit": "applyWithBand", "input": "witness:salaryPath", "reason": "Only the Merkle root is disclosed; it is already public ledger state."},
+        {"circuit": "applyWithBand", "input": "witness:employeeSecret", "reason": "Only the per-posting nullifier hash(domain, postingId, sk) is disclosed; preimage has 256-bit entropy."},
+        {"circuit": "issueSalary", "input": "arg:amount", "reason": "Disclosed only inside a commitment salted with 256 random bits."},
+        {"circuit": "issueSalary", "input": "arg:employee", "reason": "Disclosed only inside the salted commitment."},
+        {"circuit": "issueSalary", "input": "arg:salt", "reason": "Disclosed only inside the commitment hash."}
+      ]
+    }
+  ]
+}

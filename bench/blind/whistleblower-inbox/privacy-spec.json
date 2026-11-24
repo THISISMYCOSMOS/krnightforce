@@ -1,0 +1,24 @@
+{
+  "contract": "whistleblower.compact",
+  "hidden": [
+    {"input": "witness:staffSecret", "why": "Identity of the reporter; a report must not reveal which enrolled staff member filed it."},
+    {"input": "witness:staffPath", "why": "Leaf position identifies the reporter."},
+    {"input": "arg:dept", "why": "Department of the reporter. In a 5-department company with small teams this narrows the reporter to a handful of people."},
+    {"input": "witness:adminSecret", "why": "Admin signing secret."}
+  ],
+  "mayReveal": [
+    {"circuit": "enrol", "input": "arg:staffPk", "kind": "value", "why": "The roster of enrolled keys is public (who may report is not secret, who did report is)."},
+    {"circuit": "submitReport", "input": "arg:reportHash", "kind": "value", "why": "Hash of the encrypted report body; needed so the officer can match the off-chain ciphertext."},
+    {"circuit": "submitReport", "input": "witness:staffSecret", "kind": "fact", "fact": "staffKey(staffSecret) is enrolled and has not reported in the current month", "why": "Membership and rate limit are the contract's purpose. Only a month-scoped nullifier with 256-bit secret input is disclosed."},
+    {"circuit": "submitReport", "input": "witness:staffPath", "kind": "value", "why": "Only the Merkle root, already public."}
+  ],
+  "acceptedLeakage": [
+    "The number of reports per month.",
+    "Submission time and the transaction fee payer are outside the contract (reporters should use a fresh/unlinked wallet).",
+    "The size of the enrolled roster (the anonymity set)."
+  ],
+  "unlinkable": [
+    {"actions": ["enrol", "submitReport"], "why": "A report must not be attributable to an enrolled key."},
+    {"actions": ["submitReport", "submitReport"], "why": "Reports by the same person in different months must not be linkable."}
+  ]
+}

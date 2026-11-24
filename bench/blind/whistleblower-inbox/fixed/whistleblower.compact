@@ -1,0 +1,64 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Anonymous whistleblower inbox (fixed design).
+// Staff keys sit in a Merkle tree; a report proves membership via a path, so
+// only the public root is revealed. The once-per-month rule uses a nullifier
+// over the month taken from the ledger (not from the caller). Routing data such
+// as the department travels inside the encrypted report body, not on chain.
+
+export struct MonthTag {
+  domain: Bytes<32>;
+  month: Uint<64>;
+  sk: Bytes<32>;
+}
+
+export ledger admin: Bytes<32>;
+export ledger staff: HistoricMerkleTree<16, Bytes<32>>;
+export ledger month: Counter;
+export ledger usedTags: Set<Bytes<32>>;
+export ledger reports: Set<Bytes<32>>;
+export ledger reportCount: Counter;
+
+witness adminSecret(): Bytes<32>;
+witness staffSecret(): Bytes<32>;
+witness staffPath(pk: Bytes<32>): MerkleTreePath<16, Bytes<32>>;
+
+circuit adminKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "wb:admin"), sk]);
+}
+
+circuit staffKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "wb:staff"), sk]);
+}
+
+constructor() {
+  admin = disclose(adminKey(adminSecret()));
+}
+
+export circuit enrol(staffPk: Bytes<32>): [] {
+  assert(adminKey(adminSecret()) == admin, "only admin");
+  staff.insert(disclose(staffPk));
+}
+
+// The admin opens the next reporting period (once a month).
+export circuit advanceMonth(): [] {
+  assert(adminKey(adminSecret()) == admin, "only admin");
+  month.increment(1);
+}
+
+export circuit submitReport(reportHash: Bytes<32>): [] {
+  const sk = staffSecret();
+  const pk = staffKey(sk);
+  const path = staffPath(pk);
+  assert(path.leaf == pk, "path does not match key");
+  assert(staff.checkRoot(disclose(merkleTreePathRoot<16, Bytes<32>>(path))), "not enrolled");
+
+  const tag = persistentHash<MonthTag>(MonthTag { domain: pad(32, "wb:month"), month: month.read(), sk: sk });
+  assert(!usedTags.member(disclose(tag)), "already reported this month");
+  usedTags.insert(disclose(tag));
+
+  reports.insert(disclose(reportHash));
+  reportCount.increment(1);
+}

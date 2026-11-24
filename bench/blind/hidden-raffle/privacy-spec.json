@@ -1,0 +1,28 @@
+{
+  "contract": "raffle.compact",
+  "hidden": [
+    {"input": "witness:ticketNumber", "range": "0..999", "why": "Each buyer's chosen number stays secret until (and, for losers, after) the draw, so the organizer cannot pick an unsold number or a friend's number and buyers cannot copy each other."},
+    {"input": "witness:ticketSalt", "why": "Commitment randomness; also the nullifier secret."},
+    {"input": "witness:ticketPath", "why": "Leaf position identifies which purchase is claiming."},
+    {"input": "arg:myNonce", "why": "Holed only: identifies the purchase slot."},
+    {"input": "witness:organizerSecret", "why": "Organizer signing secret."},
+    {"input": "arg:salt", "why": "Draw-commitment randomness until reveal (revealed by design in draw)."}
+  ],
+  "mayReveal": [
+    {"circuit": "constructor", "input": "arg:drawCommit", "kind": "value", "why": "Public commitment to the winning number."},
+    {"circuit": "draw", "input": "arg:number", "kind": "value", "why": "The winning number is announced."},
+    {"circuit": "claimPrize", "input": "witness:ticketNumber", "kind": "fact", "fact": "ticketNumber == winningNumber", "why": "A claim proves a winning ticket; the winning number is public anyway."},
+    {"circuit": "claimPrize", "input": "arg:payTo", "kind": "value", "why": "Payout address must be public to pay out."},
+    {"circuit": "claimPrize", "input": "witness:ticketPath", "kind": "value", "why": "Only the Merkle root, already public."},
+    {"circuit": "claimPrize", "input": "witness:ticketSalt", "kind": "value", "why": "Only the nullifier hash(domain, salt); unlinkable to the leaf."},
+    {"circuit": "buyTicket", "input": "witness:ticketNumber", "kind": "value", "why": "Only inside a commitment with a 256-bit salt."}
+  ],
+  "acceptedLeakage": [
+    "Number of tickets sold and number of winning claims.",
+    "Who bought a ticket (the wallet paying fees) is visible outside the contract.",
+    "The payout address of each winner."
+  ],
+  "unlinkable": [
+    {"actions": ["buyTicket", "claimPrize"], "why": "A winner's claim must not reveal which purchase (and thus which buyer wallet) it came from."}
+  ]
+}
