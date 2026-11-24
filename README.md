@@ -18,7 +18,7 @@ Midnight Proof Kit은 Compact 계약을 로컬에서 실제로 실행해 확인�
 - 정직한 값으로만 돌린 시험은 모두 통과했습니다.
 
 이 결함은 실제로 실행해 봐야 확정됩니다. 기존 도구에는 그 자리가 비어 있습니다.
-- **Compact 컴파일러**는 `disclose()` 없이 숨긴 값을 공개하는 코드를 막습니다. 하지만 해시와 커밋은 "숨겨진다"고 믿고 통과시킵니다. 예를 들어 작은 값의 해시, 상수 소금 커밋, 숨긴 시각을 `disclose()`로 감싼 `blockTimeGte`는 컴파일됩니다.
+- **Compact 컴파일러**는 `disclose()` 없이 숨긴 값을 공개하는 코드를 막습니다. 하지만 커밋은 상수 소금이어도 `disclose()` 없이 통과시키고, 해시는 `disclose()`만 붙이면 경우의 수가 작은 값이어도 통과시킵니다. 또 컴파일러가 `disclose()`를 요구할 때 그대로 감싸면 컴파일은 되지만 값이 공개됩니다(예: 숨긴 구매 시각을 비교하는 `blockTimeGte`, 시나리오 car-club 구멍 판).
 - **midnight-expert의 `/audit-compact`**는 LLM이 코드를 읽어 의심 가는 곳을 찾습니다. 개인정보 항목은 대부분 리뷰 판단으로 남습니다.
 
 그 개발 기록을 Midnight를 처음 쓰는 사람의 입장에서 일반화한 것이 이 도구의 기준입니다([처음 만들 때 생기는 일](docs/design-guide/lessons-first-build.md)). 아직 한 사람의 기록에서 나온 기준이라, 실제 레포 측정으로 넓혀 갈 예정입니다.
@@ -56,7 +56,7 @@ flowchart LR
 | 공격 | 하는 일 | 상태 |
 | --- | --- | --- |
 | A1 노출 | 숨긴 입력 하나만 바꿔 여러 번 실행하고, 체인에 남는 기록과 장부를 비교합니다. 반환값은 호출자에게만 가므로 따로 표시하고 실패로 세지 않습니다 | 동작 |
-| A2 역산 | 숨긴 입력에 묶인 공개 값이 있으면 값 범위를 전수 대입해 원래 값을 되찾습니다 | 동작 |
+| A2 역산 | 숨긴 입력에 묶인 공개 값이 있으면 후보를 대입해 원래 값을 되찾습니다. 범위가 작으면 전부, 크면 예산(기본 12,000개)까지 대입하고, 키·소금처럼 경우의 수가 큰 값은 시도하지 않습니다 | 동작 |
 | A5 경로 | 숨긴 입력에 따라 건드리는 장부 칸이나 연산 순서가 달라지는지 봅니다 | 동작 |
 | T2 분할 witness | 한 호출에서 같은 witness를 같은 인자로 여러 번 읽는 회로에, 읽을 때마다 다른 값을 줘도 통과하는지 봅니다(`UNBOUND`, 기준 10) | 동작 |
 | A3 연결 | 같은 사용자의 두 행동이 공개 값으로 이어지는지 봅니다 | 계획 |
@@ -74,7 +74,7 @@ flowchart LR
 
 **검증자에게만.** 누출 설명의 숨김 항목에 `shareWith`(그 값을 받는 쪽)를 적을 수 있습니다.
 - 그 쪽은 장부 밖에서 opening(값 + nonce)을 받아, 체인의 커밋과 대조해 값을 확인합니다.
-- 엔진은 그런 커밋이 체인에 실제로 있는지 확인합니다. 이 확인은 실패 수와 따로 셉니다.
+- 엔진은 그 값의 커밋이나 해시가 체인에 남는지 실행 결과로 확인합니다. 받는 쪽이 opening으로 다시 계산할 수 있는지까지는 보지 않습니다. 이 확인은 실패 수와 따로 셉니다.
 
 **통과의 뜻.** "이 공격 목록에서 재현되지 않음"이지 "안전함"이 아닙니다. 결과 종류와 그림 색의 뜻은 [verdicts.md](plugins/proof-kit/skills/proof-attack/references/verdicts.md)에 있습니다.
 
@@ -108,9 +108,9 @@ node packages/proof-kit/dist/cli.js attack managed/my --spec privacy-spec.json -
 node packages/proof-kit/dist/cli.js map managed/holed managed/fixed --spec privacy-spec.json --out map.md
 ```
 
-**설치 조건.** 컴파일된 계약이 `@midnight-ntwrk/compact-runtime`을 찾을 수 있어야 하므로, 계약 프로젝트에 이 패키지가 설치돼 있어야 합니다.
+**런타임.** 엔진은 계약 프로젝트의 `@midnight-ntwrk/compact-runtime`을 먼저 쓰고, 없으면 엔진에 든 사본을 씁니다. 버전을 맞추려면 계약 프로젝트에 설치해 두기를 권합니다.
 
-**종료 코드.** 실패가 없으면 0, 있으면 1, 사용법·불러오기 오류면 2입니다.
+**종료 코드.** `attack`은 실패가 없으면 0, 있으면 1, 사용법·불러오기 오류면 2입니다. `map`은 그림을 만들면 0입니다(실패가 있어도). 따로 `--help`는 없고, 잘못 부르면 사용법을 출력합니다.
 
 **엔진 개발용 명령.** 컴파일러 경로를 넘겨 픽스처를 컴파일한 뒤 시험합니다.
 
@@ -146,7 +146,7 @@ claude plugin marketplace add THISISMYCOSMOS/krnightforce
 
 Midnight Proof Kit is a Claude Code plugin and TypeScript test engine that runs compiled Compact contracts locally and checks, by attack tests, whether values meant to stay hidden really stay hidden on chain, and whether a circuit binds the values the user supplies. Verdicts come only from execution, never from an LLM's judgment.
 
-**Why.** The project started from its author's first Midnight build. Whether the circuits were right, and whether hidden values stayed hidden, rested on LLM review. That review spotted the most serious flaw but could not confirm it: a circuit read the same secret witness twice, which broke the duplicate-claim check. Tests run with honest values all passed. The Compact compiler trusts hashes and commitments to hide their inputs. midnight-expert's `/audit-compact` leaves most privacy items to review judgment. Proof Kit generalizes that build log into criteria for first-time builders ([lessons, Korean](docs/design-guide/lessons-first-build.md)) and checks them by execution.
+**Why.** The project started from its author's first Midnight build. Whether the circuits were right, and whether hidden values stayed hidden, rested on LLM review. That review spotted the most serious flaw but could not confirm it: a circuit read the same secret witness twice, which broke the duplicate-claim check. Tests run with honest values all passed. The Compact compiler lets a constant-salt commitment through without `disclose()`, and a hash of a small value through once it is wrapped in `disclose()`. midnight-expert's `/audit-compact` leaves most privacy items to review judgment. Proof Kit generalizes that build log into criteria for first-time builders ([lessons, Korean](docs/design-guide/lessons-first-build.md)) and checks them by execution.
 
 **Three features, one flow.**
 - `/proof:spec` designs the circuit from a one-line idea and writes the leakage description (`privacy-spec.json`).
@@ -165,7 +165,7 @@ Midnight Proof Kit is a Claude Code plugin and TypeScript test engine that runs 
 **Verdicts.**
 - Anything outside the leakage description that lands on chain fails.
 - Without a description, only values recovered through a hash or commitment fail.
-- A `hidden` entry may name `shareWith`, a party that receives the opening off chain. The engine checks that a commitment of that value really is on chain, and reports this check apart from the failure count.
+- A `hidden` entry may name `shareWith`, a party that receives the opening off chain. The engine checks, from execution, that a commitment or hash of that value lands on chain, and reports this check apart from the failure count. It does not check that the party can recompute it from the opening.
 - A pass means "not reproduced by this attack list", not "safe".
 
 Eight self-written holed/fixed scenario pairs in `bench/scenarios/` are checked against answer keys. Plan and status: [docs/plan.md](docs/plan.md). Handoff: [docs/HANDOFF.md](docs/HANDOFF.md).

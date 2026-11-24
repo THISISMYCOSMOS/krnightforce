@@ -51,7 +51,7 @@ A `missing` check is not a privacy failure: it does not change `failure`, `summa
 | 증명만 (proof only) | `MASKED`, `TAG` |
 | 공개 (public) | `disclosure` is `"spec"` or `"declared"` |
 | 위험 (at risk) | failures |
-| 회색 (gray) | untestable |
+| 시험 못 함 (gray) | untestable |
 
 ## Scope
 
