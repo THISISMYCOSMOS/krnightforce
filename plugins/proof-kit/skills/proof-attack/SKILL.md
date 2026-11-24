@@ -1,6 +1,6 @@
 ---
 name: proof:proof-attack
-description: Use when checking whether values a Compact (Midnight) contract means to hide really stay hidden on chain — running privacy attack tests, reading proof-kit engine results, drawing the privacy map, or answering "does this contract leak X?". Verdicts come only from executing the contract in the local simulator.
+description: Use when checking whether values a Compact (Midnight) contract means to hide really stay hidden on chain — running privacy attack tests, reading proof-kit engine results (for the privacy map use proof:proof-map), or answering "does this contract leak X?". Verdicts come only from executing the contract in the local simulator.
 version: 0.0.1
 ---
 
