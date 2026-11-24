@@ -48,6 +48,12 @@
   npx --prefix packages/proof-kit biome check packages plugins docs bench   # 레포 루트에서
   ```
 - **lint 주의**: 서브에이전트 작업 트리는 `.claude/worktrees/`에 생깁니다. 레포 루트에서 `biome check .`를 하면 그 안도 검사하므로, 위처럼 폴더를 지정하세요. 이 폴더는 `.git/info/exclude`로 추적에서 뺐습니다.
+- **측정 원자료**: 남의 레포 이름, 코드, 결과는 `private/`(gitignore)에만 둡니다.
+  - 클라우드 세션이면 세션이 끝나기 전에 `private/`를 사용자 PC나 비공개 레포로 옮깁니다. 컨테이너와 함께 사라지기 때문입니다.
+  - 공개 문서에는 이름 없는 집계만 씁니다.
+- **엔진을 모르는 시나리오**: 별도 클라우드 세션이 `blind/scenarios-1` 브랜치에 `bench/blind/`를 씁니다.
+  - 그 세션은 엔진 코드와 기존 정답을 보지 않습니다. checkout에 `bench/schema`만 들어 있습니다.
+  - 받은 뒤 엔진과 대조하고, 결과에 "정답표가 표현하지 못한 구멍"(NOT MAPPED)도 함께 셉니다.
 - **진단 스크립트** (판정 아님): `packages/proof-kit/scripts/`
   - `count-witness-reads.mts`: 회로마다 witness를 몇 번 읽는지 셉니다.
   - `probe-witness-reads.mts`: 실험 p29를 실행합니다.
