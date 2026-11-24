@@ -41,6 +41,7 @@ Copy only the rows of the "Works / does not work" table in `criteria.md` that ap
 | --- | --- |
 | e.g. 1, 4 | `/proof:attack`: A1 and A2 on `issue` |
 | e.g. 6 | `/proof:attack`: A1 on `verify` against `privacy-spec.json` |
-| e.g. 10, 11 | not checked by attack tests (guidance) |
+| e.g. 10 | `/proof:attack`: T2 checks that each witness is read once per call; other vouching is guidance |
+| e.g. 11 | not checked by attack tests (guidance) |
 
 End with: "If you agree with part 2, I will save it as `privacy-spec.json`."

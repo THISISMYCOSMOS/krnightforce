@@ -36,10 +36,10 @@ npx --no-install proofkit attack <out-dir> --source <contract.compact> --json
 
 The report has `units` (one per circuit, plus `<constructor>`). Each unit has `status` (`tested` or `untestable` with a `reason`) and `inputs`. Each input has `input` (`witness:<name>` or `arg:<name>`, struct fields as `.field`), `type`, `entropy`, `status`, and `findings`. Each finding has:
 
-- `kind`: `EXPOSED`, `RECOVERABLE`, `PARTIAL`, `TAG`, `MASKED`
+- `kind`: `EXPOSED`, `RECOVERABLE`, `PARTIAL`, `TAG`, `MASKED`, `UNBOUND` (T2: a witness read more than once accepts different values per read; always a failure, criterion 10)
 - `where`: `value`, `path`, `ledger` (constructor state) or `result` (return value)
 - `location`: transcript op index (`op 3`), ledger cell (`cell 1`), `shape` or `result`
-- `attack`: `A1`, `A2` or `A5`
+- `attack`: `A1`, `A2`, `A5` or `T2`
 - `derived` (`hash` / `direct`), `disclosure` (`declared` / `spec` / null)
 - `onChain`, `failure`, `criteria` (design criteria a failure breaks), `detail`, `evidence`
 

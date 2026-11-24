@@ -20,6 +20,7 @@ Midnight Proof Kit은 Compact 계약을 로컬 시뮬레이터로 실제로 실�
 | A2 역산 | 숨긴 입력에 묶인 공개 값이 있으면 값 범위를 전수 대입해 원래 값을 되찾는지 확인 |
 | A3 연결 | 같은 사용자의 두 행동이 공개 값으로 이어지는지 확인 (계획) |
 | A5 경로 | 숨긴 입력에 따라 건드리는 장부 칸이 달라지는지 확인 |
+| T2 분할 witness | 한 호출에서 같은 witness를 여러 번 읽는 회로가, 읽을 때마다 다른 값을 줘도 통과하는지 확인 (`UNBOUND`, 기준 10) |
 
 기능 세 가지:
 
@@ -52,7 +53,7 @@ claude plugin marketplace add THISISMYCOSMOS/krnightforce
 
 Midnight Proof Kit is a Claude Code plugin and TypeScript test engine that runs Compact contracts in the local simulator to check, by attack tests, **whether values meant to stay hidden really stay hidden on chain**. Verdicts come only from execution results, never from an LLM's judgment.
 
-Attacks (initial scope): A1 exposure (vary one hidden input, diff the public transcript and ledger; return values go only to the caller and are reported separately, never as failures), A2 recovery (brute-force the value range against a public value), A3 linking (planned), A5 path (hidden input changes which ledger cells are touched).
+Attacks (initial scope): A1 exposure (vary one hidden input, diff the public transcript and ledger; return values go only to the caller and are reported separately, never as failures), A2 recovery (brute-force the value range against a public value), A3 linking (planned), A5 path (hidden input changes which ledger cells are touched), T2 split witness (a witness read more than once in a call still passes when the reads get different values).
 
 Why: newcomers to Midnight end up relying on LLM review to check whether their circuits hide what they mean to hide. The Compact compiler rejects undeclared disclosures, but it trusts hashes and commitments to hide their inputs (an unsalted hash of a small value, or a constant-salt commitment, compiles). midnight-expert's `/audit-compact` leaves most privacy items to review judgment. Proof Kit fills that gap: a design guide to write down what may be revealed, attack tests that execute the real contract to check it, and a map plus tests that stay in the project.
 

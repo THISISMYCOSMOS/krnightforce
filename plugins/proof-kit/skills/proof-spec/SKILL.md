@@ -19,7 +19,7 @@ A contract is two things (Kachina): what it does, and what it reveals. You help 
 
 1. **The user decides what may be revealed.** Offer examples and proposals; never fill in answers for them silently.
 2. **Do not stop at what the user mentioned.** Information they did not mention (identifiers, photos, wallet addresses, metadata) still exists in their situation; put it in the inventory.
-3. **Never present a guidance criterion (3, 9, 10, 11) as checked.** Only attack tests decide pass or fail.
+3. **Never present a guidance criterion (3, 9, 10, 11) as checked.** Only attack tests decide pass or fail. The one exception: T2 checks the part of 10 where a witness is read more than once in a call.
 4. **A hash is not a commitment.** Never propose `persistentHash` to hide a value with a small range.
 5. **A commitment needs a fresh nonce per value**, kept by the user.
 6. **Never call a design safe.** Say which criteria the attack tests will check, and which they cannot.

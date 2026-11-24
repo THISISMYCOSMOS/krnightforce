@@ -1,6 +1,6 @@
 ---
 name: proof:attack
-description: Run privacy attack tests on a Compact contract by executing it in the local simulator (A1 exposure, A2 recovery, A5 path). Writing attack-plan.md, proof-attack.test.ts and privacy-baseline.json is planned. Verdicts come only from the engine output.
+description: Run privacy attack tests on a Compact contract by executing it in the local simulator (A1 exposure, A2 recovery, A5 path, T2 split witness). Writing attack-plan.md, proof-attack.test.ts and privacy-baseline.json is planned. Verdicts come only from the engine output.
 allowed-tools: Bash, Read, Glob, Grep, Write
 argument-hint: "[path/to/contract.compact]"
 ---

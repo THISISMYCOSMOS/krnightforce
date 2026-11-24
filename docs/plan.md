@@ -137,18 +137,18 @@
   - 기본값대로면 `Bytes<32>` PIN은 고엔트로피로 분류돼 역산 공격을 건너뜁니다 → 이름 힌트와 저엔트로피 사전을 씁니다.
   - 반환값으로 새는 것을 실패로 보려 했으나, 공식 문서상 반환값은 체인에 남지 않아 정정했습니다.
 - 엔진(`packages/proof-kit`)
-  - A1·A2·A5, 소금 가림 판정, 부분 노출 판정
-  - 설정 없이 시작 상태 찾기: 생성자 인자 맞추기, 회로 하나 먼저 부르기
+  - A1·A2·A5, 소금 가림 판정, 부분 노출 판정, T2 분할 witness(2026-11-24)
+  - 설정 없이 시작 상태 찾기: 생성자 인자 맞추기, 회로를 두 개까지 먼저 부르기, witness 사이의 관계 맞추기
   - CLI `proofkit attack`
-  - 시험 19개 통과
+  - 시험 41개 통과
 - 레포 뼈대: 플러그인, CI(컴파일러 0.36.0을 GitHub API 없이 직접 받음), bench 형식
-- 설계 가이드([design-guide.md](design-guide.md)), 패턴 예제(`docs/design-guide/examples/`), 컴파일러 실험 36개
+- 설계 가이드([design-guide.md](design-guide.md)), 패턴 예제(`docs/design-guide/examples/`), 컴파일러 실험 40개(p01~p29와 변형. p29·p29b는 실행 실험)
 - 회로 설계(`/proof:spec`)
   - 설계 기준 12개(판정 / 안내 구분)
   - 사용자 흐름 1~5단계와 설계안 형식(다섯 부분)
   - 엔진이 실패마다 어긴 기준 번호를 붙임(`criteria`)
   - 건강 정보 예제로 설계 → 공격까지 끝까지 확인([따라 하기](design-guide/walkthrough-health-credential.md))
-- 시나리오 7쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship. 뒤의 둘은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
+- 시나리오 8쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship, split-witness. car-club과 scholarship은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
 - 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 8쌍이 정답표대로 나오고(고친 판 실패 0), 시험 41개가 통과합니다.
 - 분할 witness 공격(T2, 2026-11-24): 한 호출에서 두 번 이상 읽힌 witness마다, 첫 읽기 또는 나머지 읽기에 다른 값을 주고 돌립니다. 통과하면 `UNBOUND` 실패입니다. 시나리오 `split-witness`가 정답표로 확인하고, 고치기 전 판 3쌍의 7개 읽기를 모두 잡습니다. 시험 계약 vault의 `register()`에서도 하나 찾았습니다(PIN 해시와 커밋이 서로 다른 PIN을 담을 수 있음).
 - 실제 구축 기록(사용자의 해커톤 앱)에서 교훈 13개를 일반화했습니다(2026-11-24, `docs/design-guide/lessons-first-build.md`). 스킬의 정보 목록·패턴·용어·설계안 형식에 반영했습니다. 내용: 공개 대상 셋(누구나·검증자만·본인), 처리 메타데이터, 증명이 보장하지 않는 것, witness 한 번 읽기 등.
