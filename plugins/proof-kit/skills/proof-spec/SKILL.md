@@ -30,7 +30,7 @@ Start from an idea, or from an existing contract (then draft step 1 from its exp
 
 **Step 1. What it does.** Restate the app in one sentence and list the circuits: who calls each, what it changes on the ledger. Ask "Is this right?"
 
-**Step 1b. Data inventory.** Before asking what to hide, list the information that usually exists in this situation — not only what the user mentioned — following `references/data-inventory.md`. For each item give what the user said (show / hide / not mentioned) and a proposal with a reason; anything the app does not need is proposed hidden or left off chain. Flag combinations of public items that can identify a person. Ask the user to confirm or change the table; their answer is the start of step 2.
+**Step 1b. Data inventory.** Before asking what to hide, list the information that usually exists in this situation — not only what the user mentioned — following `references/data-inventory.md`. For each item give what the user said (show / hide / not mentioned) and a proposal with a reason; anything the app does not need is proposed hidden or left off chain. Flag combinations of public items that can identify a person. Map every item to the Midnight mechanism that will carry it (`references/midnight-terms.md`), explaining each term precisely the first time. Ask the user to confirm or change the table; their answer is the start of step 2.
 
 **Step 2. Four questions, one at a time, each with an example from their app:**
 1. Which values must stay hidden?

@@ -1,0 +1,8 @@
+pragma language_version >= 0.22;
+import CompactStandardLibrary;
+export ledger ok: Counter;
+witness bought_at(): Uint<64>;
+export circuit prove(): [] {
+  assert(blockTimeGte(bought_at()), "too early");
+  ok.increment(1);
+}

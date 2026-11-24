@@ -20,10 +20,12 @@ Users describe what they want to show or hide, but their situation usually invol
 4. Flag **combinations**: several harmless public items together can single out one person (a rare model + color + region + year). The engine does not test this yet (A6 is planned); say so.
 5. Mark items that never reach the contract (photos, chat, off-chain storage) as **outside the contract**: the attack tests cannot check them, but the user should know.
 
+6. For each item, name **the Midnight mechanism** that carries out the proposal (public ledger field with `disclose()`, private state via a `witness`, `persistentCommit`, a nullifier, `HistoricMerkleTree` membership, issuer-attested selective disclosure, or "not in the contract"), using the terms in `midnight-terms.md`. Explain each term the first time, precisely; do not water it down.
+
 ## Output
 
-| Item | Category | User said | Proposal | Why |
-| --- | --- | --- | --- | --- |
+| Item | Category | User said | Proposal | Midnight mechanism | Why |
+| --- | --- | --- | --- | --- | --- |
 
 End with: "Is this right? Change anything you want; your answers go into the design."
 

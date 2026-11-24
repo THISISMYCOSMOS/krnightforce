@@ -64,3 +64,4 @@ Show the rows that apply to the design.
 | Returning a hidden value without `disclose()` (p03, p22) | Disclosing a whole struct (p26) |
 | Passing it to another contract without `disclose()` (p18) | `transientCommit` stored on the ledger (p07) |
 | A hidden value in an assert message (string literals only, p17) | A branch on `disclose(hidden)` choosing ledger cells (p02 + disclose) |
+| A hidden time passed to `blockTimeGte` without `disclose()` (p28) | `blockTimeGte(disclose(hiddenDate + period))`: the date becomes public |
