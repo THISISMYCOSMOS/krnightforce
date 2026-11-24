@@ -20,22 +20,21 @@ Return values go to the caller (the DApp or calling contract), not on chain: the
 
 ## Failure rule
 
-### Today (engine 0.0.1)
+A failure is leakage outside the leakage description (`docs/design-guide.md`, chapter 5). Each finding also carries:
 
-A finding fails when `onChain` is true and `kind` is `EXPOSED`, `RECOVERABLE` or `PARTIAL`. The engine does not yet read `privacy-spec.json` and does not tell a direct `disclose()` from a hash or commitment. So intended disclosures (public ids, a disclosed fact such as `age >= 18`) currently show as failures.
-
-### Decided rule (to implement next)
-
-A failure is leakage outside the leakage description (`docs/design-guide.md`, chapter 5):
+- `derived`: `"hash"` when every differing value was an output of the runtime's hash or commitment functions in that run (the engine logs `persistentHash`, `persistentCommit`, `transientHash`, `transientCommit` while it runs), otherwise `"direct"`.
+- `disclosure`: why a failure kind is not a failure — `"declared"` (no spec; the code disclosed it directly) or `"spec"` (`mayReveal` allows it) — or `null`.
 
 | Situation | With `privacy-spec.json` | Without it |
 | --- | --- | --- |
-| Value, fact or path revealed by a direct `disclose()` | Fails unless `mayReveal` covers it | Declared disclosure: "public", not a failure |
-| Value recovered from a hash or commitment | Fails | Fails (the compiler trusted it to hide) |
-| Masked by a secret | Pass | Pass |
+| Value, fact or path revealed directly (`derived: "direct"`) | Fails unless `mayReveal` covers it | `disclosure: "declared"`, not a failure |
+| Value recovered through a hash or commitment (`derived: "hash"`) | Fails unless `mayReveal` covers it | Fails (the compiler trusted it to hide) |
+| Masked by a secret, or a tag | Pass | Pass |
 | Linked actions listed in `unlinkable` | Fails (A3, planned) | — |
 
-To tell a direct `disclose()` from a hash or commitment from execution alone, the engine will record the outputs of the runtime's hash and commitment functions during each run and check whether the differing value is one of them.
+`mayReveal` coverage is by circuit + input: `kind: "value"` covers `EXPOSED` and `RECOVERABLE`, `"fact"` covers `PARTIAL`, `"path"` covers any failure at `where: "path"`. The `fact` text is for people; the engine does not evaluate it.
+
+The CLI takes `--spec <file>`; without it, `privacy-spec.json` next to the contract source is used if present (`--no-spec` turns this off).
 
 ## Map colors
 
@@ -43,7 +42,7 @@ To tell a direct `disclose()` from a hash or commitment from execution alone, th
 | --- | --- |
 | 숨김 (hidden) | no difference in any sample |
 | 증명만 (proof only) | `MASKED`, `TAG` |
-| 공개 (public) | covered by the leakage description, or a declared disclosure without a spec |
+| 공개 (public) | `disclosure` is `"spec"` or `"declared"` |
 | 위험 (at risk) | failures |
 | 회색 (gray) | untestable |
 

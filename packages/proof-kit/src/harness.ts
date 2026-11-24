@@ -13,8 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type CType, fromInfo, fromRuntimeString } from "./types.js";
@@ -63,6 +65,12 @@ export interface Observation {
 	/** Witnesses called during the constructor and during the circuit call. */
 	calledInConstructor: Set<string>;
 	calledInCircuit: Set<string>;
+	/**
+	 * Outputs of the runtime's hash and commitment functions during this run
+	 * (deployment and call), normalized like transcript values. Used to tell a
+	 * value derived through a hash or commitment from a direct disclose().
+	 */
+	hashes: Set<string>;
 }
 
 /** A circuit call made before the attacked one, to reach a state where it can run. */
@@ -104,20 +112,81 @@ function findSource(dir: string): string | null {
 	}
 }
 
+const HASH_FUNCTIONS = ["persistentHash", "persistentCommit", "transientHash", "transientCommit"];
+
+function runtimeUrl(indexJs: string): string {
+	try {
+		return pathToFileURL(createRequire(indexJs).resolve("@midnight-ntwrk/compact-runtime")).href;
+	} catch {
+		return pathToFileURL(createRequire(import.meta.url).resolve("@midnight-ntwrk/compact-runtime"))
+			.href;
+	}
+}
+
+/**
+ * Write a copy of the compiled contract whose runtime import goes through a
+ * wrapper that logs hash and commitment outputs. The copy lives in a temp
+ * directory; the user's files are not touched.
+ */
+function instrumented(indexJs: string, rtUrl: string): string {
+	const src = readFileSync(indexJs, "utf8");
+	const line = /^import \* as __compactRuntime from '@midnight-ntwrk\/compact-runtime';$/m;
+	if (!line.test(src)) return pathToFileURL(indexJs).href;
+	const id = createHash("sha256")
+		.update(indexJs)
+		.update(src)
+		.update(rtUrl)
+		.digest("hex")
+		.slice(0, 16);
+	const dir = join(tmpdir(), "proofkit", id);
+	mkdirSync(dir, { recursive: true });
+	const wrapper = join(dir, "runtime.mjs");
+	const fns = HASH_FUNCTIONS.map(
+		(f) =>
+			`export function ${f}(...a) { const v = rt.${f}(...a); const l = globalThis.__proofkitHashLog; if (l) l.push(v); return v; }`,
+	).join("\n");
+	writeFileSync(
+		wrapper,
+		`import * as rt from ${JSON.stringify(rtUrl)};\nexport * from ${JSON.stringify(rtUrl)};\n${fns}\n`,
+	);
+	const out = join(dir, "index.mjs");
+	writeFileSync(
+		out,
+		src.replace(
+			line,
+			`import * as __compactRuntime from ${JSON.stringify(pathToFileURL(wrapper).href)};`,
+		),
+	);
+	return pathToFileURL(out).href;
+}
+
+/** Normalized strings under which a hash output can appear in a transcript. */
+function hashForms(v: unknown): string[] {
+	if (v instanceof Uint8Array) return [Buffer.from(v).toString("hex")];
+	if (typeof v === "bigint") {
+		let x = v;
+		let hex = "";
+		while (x > 0n) {
+			hex += (x & 0xffn).toString(16).padStart(2, "0");
+			x >>= 8n;
+		}
+		return [`${v}n`, hex];
+	}
+	return [];
+}
+
+function collectHashes(log: unknown[]): Set<string> {
+	return new Set(log.flatMap(hashForms));
+}
+
 /** Load a compiled contract directory (the out dir given to `compact compile`). */
 export async function loadCompiled(dir: string, sourceFile?: string): Promise<Compiled> {
 	const abs = resolve(dir);
 	const info = JSON.parse(readFileSync(join(abs, "compiler", "contract-info.json"), "utf8"));
 	const indexJs = join(abs, "contract", "index.js");
 	// Use the runtime the contract itself resolves, so classes and WASM state are shared.
-	let rt: Any;
-	try {
-		const req = createRequire(indexJs);
-		rt = await import(pathToFileURL(req.resolve("@midnight-ntwrk/compact-runtime")).href);
-	} catch {
-		rt = await import("@midnight-ntwrk/compact-runtime");
-	}
-	const mod = await import(pathToFileURL(indexJs).href);
+	const rt: Any = await import(runtimeUrl(indexJs));
+	const mod = await import(instrumented(indexJs, runtimeUrl(indexJs)));
 	const witnesses: InputSpec[] = (info.witnesses ?? []).map((w: Any) => ({
 		source: "witness",
 		name: w.name,
@@ -233,7 +302,7 @@ export class Runner {
 	private readonly contract: Any;
 	private readonly deployments = new Map<
 		string,
-		{ ok: boolean; error?: string; state?: Any; called: Set<string> }
+		{ ok: boolean; error?: string; state?: Any; called: Set<string>; hashes: Set<string> }
 	>();
 	private phase: "constructor" | "circuit" = "constructor";
 	private calledInConstructor = new Set<string>();
@@ -289,24 +358,43 @@ export class Runner {
 		return { witnesses: { ...this.defaults, ...a.witnesses }, args: a.args };
 	}
 
-	private async deploy(
-		a: Assignment,
-	): Promise<{ ok: boolean; error?: string; state?: Any; called: Set<string> }> {
+	private async deploy(a: Assignment): Promise<{
+		ok: boolean;
+		error?: string;
+		state?: Any;
+		called: Set<string>;
+		hashes: Set<string>;
+	}> {
 		const key = this.deployKey(a);
 		const hit = this.deployments.get(key);
 		if (hit) return hit;
 		this.current = a;
 		this.phase = "constructor";
 		this.calledInConstructor = new Set();
-		let out: { ok: boolean; error?: string; state?: Any; called: Set<string> };
+		const log: unknown[] = [];
+		const g = globalThis as { __proofkitHashLog?: unknown[] };
+		g.__proofkitHashLog = log;
+		let out: { ok: boolean; error?: string; state?: Any; called: Set<string>; hashes: Set<string> };
 		try {
 			const init = await this.contract.initialState(
 				this.c.rt.createConstructorContext({}, PK),
 				...this.ctorArgs(a),
 			);
-			out = { ok: true, state: init.currentContractState.data, called: this.calledInConstructor };
+			out = {
+				ok: true,
+				state: init.currentContractState.data,
+				called: this.calledInConstructor,
+				hashes: collectHashes(log),
+			};
 		} catch (e) {
-			out = { ok: false, error: errorText(e), called: this.calledInConstructor };
+			out = {
+				ok: false,
+				error: errorText(e),
+				called: this.calledInConstructor,
+				hashes: collectHashes(log),
+			};
+		} finally {
+			g.__proofkitHashLog = undefined;
 		}
 		if (this.ctorWitnesses === null) {
 			this.ctorWitnesses = [...out.called].sort();
@@ -329,6 +417,7 @@ export class Runner {
 			result: null,
 			calledInConstructor: d.called,
 			calledInCircuit: new Set(),
+			hashes: d.hashes,
 		};
 	}
 
@@ -357,12 +446,17 @@ export class Runner {
 		if (!d.ok) return failed(`constructor: ${d.error}`, d.called, new Set());
 		this.current = a;
 		this.phase = "circuit";
+		// Setup calls are logged too: their hashes can reach this call's transcript as ledger reads.
+		const log: unknown[] = [];
+		const g = globalThis as { __proofkitHashLog?: unknown[] };
+		g.__proofkitHashLog = log;
 		let state = d.state;
 		for (const p of prefix) {
 			try {
 				const r = await this.call(p.circuit, state, p.args);
 				state = r.context.callContext.currentQueryContext.state;
 			} catch (e) {
+				g.__proofkitHashLog = undefined;
 				return failed(`setup ${p.circuit}: ${errorText(e)}`, d.called, new Set());
 			}
 		}
@@ -378,9 +472,12 @@ export class Runner {
 				result: normalize(res.result),
 				calledInConstructor: d.called,
 				calledInCircuit: this.calledInCircuit,
+				hashes: new Set([...d.hashes, ...collectHashes(log)]),
 			};
 		} catch (e) {
 			return failed(errorText(e), d.called, this.calledInCircuit);
+		} finally {
+			g.__proofkitHashLog = undefined;
 		}
 	}
 }
@@ -394,6 +491,7 @@ function failed(error: string, ctor: Set<string>, circ: Set<string>): Observatio
 		result: null,
 		calledInConstructor: ctor,
 		calledInCircuit: circ,
+		hashes: new Set(),
 	};
 }
 

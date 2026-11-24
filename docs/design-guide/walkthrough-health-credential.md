@@ -104,6 +104,18 @@
   witness:patient_condition (Uint<0..65536>): masked [A1] at value op 8 — changes with this input but is masked by witness:claim_nonce
 ```
 
-**아직 남은 차이.** 두 판 모두 `arg:id`가 "FAIL exposed"로 나옵니다. id는 누출 설명에서 "드러나도 됨"으로 적은 값이라 실패가 아니어야 합니다. 엔진이 아직 `privacy-spec.json`을 읽지 않고, 정한 판정 규칙도 반영하지 않아서 생기는 차이입니다([plan.md](../plan.md) 다음 작업). 반영하면 설계대로 만든 판은 실패 0이 됩니다.
+**자격 증명 id.** id는 누출 설명에서 "드러나도 됨"으로 적은 값이라, 엔진이 실패가 아니라 공개로 표시합니다. 설계대로 만든 판의 결과(누출 설명 사용):
+
+```
+[issue]
+  arg:id (Bytes<32>): public (allowed by spec) exposed [A1] at value op 4 — the input appears verbatim
+  witness:patient_age (Uint<0..256>): masked [A1] at value op 5 — changes with this input but is masked by witness:claim_nonce
+[verifyAdult]
+  arg:id (Bytes<32>): public (allowed by spec) exposed [A1] at value op 2 — the input appears verbatim
+  witness:patient_age (Uint<0..256>): masked [A1] at value op 8 — changes with this input but is masked by witness:claim_nonce
+0 failure(s); 9 input(s) tested, 0 untestable
+```
+
+해시로 숨긴 판은 누출 설명이 없어도 실패가 납니다. 값이 해시를 거쳐 나온 것이라, 컴파일러가 숨겨진다고 믿고 통과시킨 경우이기 때문입니다.
 
 **그다음**: `/proof:map`으로 두 판의 결과를 그림으로 나란히 그립니다. 시각화는 다음 작업입니다.

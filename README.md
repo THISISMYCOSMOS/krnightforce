@@ -25,7 +25,7 @@ Midnight Proof Kit은 Compact 계약을 로컬 시뮬레이터로 실제로 실�
 
 - `/proof:attack`: 공격 시험. 엔진과 CLI(`proofkit attack`)는 동작합니다. 시험을 일반 vitest 파일로 프로젝트에 남기는 기능은 계획입니다.
 - `/proof:map`: 시험 결과를 "숨긴 값 → 회로 → 체인에 남는 것" 그림으로 칠합니다. (계획)
-- `/proof:spec`: 코드 전에 무엇을 숨길지 정하고(누출 설명), 시험이 실패하면 고칠 패턴을 안내합니다. 설계 가이드([docs/design-guide.md](docs/design-guide.md))와 스킬은 있습니다. 엔진이 누출 설명 파일을 읽는 것은 계획입니다.
+- `/proof:spec`: 코드 전에 무엇을 숨길지 정하고(누출 설명), 시험이 실패하면 고칠 패턴을 안내합니다. 설계 가이드([docs/design-guide.md](docs/design-guide.md)), 설계 기준 12개, 스킬이 있고, 엔진이 누출 설명 파일을 읽습니다(`--spec`).
 
 **통과의 뜻**: 통과는 "이 공격 목록에서 재현되지 않음"이지 "안전함"이 아닙니다.
 
@@ -56,7 +56,7 @@ Attacks (initial scope): A1 exposure (vary one hidden input, diff the public tra
 
 Why: newcomers to Midnight end up relying on LLM review to check whether their circuits hide what they mean to hide. The Compact compiler rejects undeclared disclosures, but it trusts hashes and commitments to hide their inputs (an unsalted hash of a small value, or a constant-salt commitment, compiles). midnight-expert's `/audit-compact` leaves most privacy items to review judgment. Proof Kit fills that gap: a design guide to write down what may be revealed, attack tests that execute the real contract to check it, and a map plus tests that stay in the project.
 
-Features: `/proof:spec` (design guide and skill exist; engine support for the spec file is planned), `/proof:attack` (engine and `proofkit attack` CLI work; test-file export is planned), `/proof:map` (planned). Plan and status: [docs/plan.md](docs/plan.md).
+Features: `/proof:spec` (design guide, twelve design criteria and skill exist; the engine reads the spec file via `--spec`), `/proof:attack` (engine and `proofkit attack` CLI work; test-file export is planned), `/proof:map` (planned). Plan and status: [docs/plan.md](docs/plan.md).
 
 A pass means "not reproduced by this attack list", not "safe". Out of scope: fee addresses, unshielded tokens, network metadata, wallets and proving servers. When proofs are generated on an external proving server, the hidden values are sent to that server, and their protection depends on that server's trusted execution environment.
 

@@ -40,7 +40,8 @@ The report has `units` (one per circuit, plus `<constructor>`). Each unit has `s
 - `where`: `value`, `path`, `ledger` (constructor state) or `result` (return value)
 - `location`: transcript op index (`op 3`), ledger cell (`cell 1`), `shape` or `result`
 - `attack`: `A1`, `A2` or `A5`
-- `onChain`, `failure`, `detail`, `evidence`
+- `derived` (`hash` / `direct`), `disclosure` (`declared` / `spec` / null)
+- `onChain`, `failure`, `criteria` (design criteria a failure breaks), `detail`, `evidence`
 
 Only `failure: true` counts. See `references/verdicts.md`.
 
@@ -51,7 +52,7 @@ Report in this order:
 3. Passes: counts only.
 4. Files written (planned: `attack-plan.md`, `proof-attack.test.ts`, `privacy-baseline.json`).
 
-> Status: the engine writes the JSON and text report today. The test file, attack plan, baseline and `accept` are planned (see `docs/plan.md`).
+> Status: the engine writes the JSON and text report and reads `privacy-spec.json` (`--spec`) today. The test file, attack plan, baseline and `accept` are planned (see `docs/plan.md`).
 
 ## Baseline (ratchet)
 

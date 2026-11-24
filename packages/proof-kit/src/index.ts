@@ -26,3 +26,5 @@ export type {
 export { loadCompiled, Runner } from "./harness.js";
 export type { Compiled } from "./harness.js";
 export { formatText } from "./format.js";
+export { covers, findSpec, loadSpec } from "./spec.js";
+export type { LoadedSpec, PrivacySpec } from "./spec.js";

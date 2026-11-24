@@ -7,7 +7,7 @@ argument-hint: "[path/to/contract.compact]"
 
 Write a privacy spec for a Compact contract. Load the `proof:proof-spec` skill first and follow it.
 
-> Status: the design guide (`docs/design-guide.md`) and the `proof:proof-spec` skill exist. The engine does not read `privacy-spec.json` yet (`docs/plan.md`, next task 1).
+> Status: the design guide (`docs/design-guide.md`) and the `proof:proof-spec` skill exist. The engine reads `privacy-spec.json` (`--spec`).
 
 ## Steps
 

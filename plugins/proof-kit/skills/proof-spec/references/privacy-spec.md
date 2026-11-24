@@ -31,4 +31,5 @@ The leakage description of one contract: what it may reveal. The attack engine r
 - `unlinkable`: pairs of actions that must not be linkable (checked by A3, planned).
 - `vouchedBy`: who vouches for each input (guide chapter 3). Not checked by the engine.
 - A finding on a hidden input fails unless `mayReveal` covers it for that circuit.
-- Engine support for reading this file is planned; the format is fixed first so scenarios can use it.
+- Pass it with `proofkit attack <dir> --spec <file>`, or put it next to the contract source.
+- `range` is inclusive.

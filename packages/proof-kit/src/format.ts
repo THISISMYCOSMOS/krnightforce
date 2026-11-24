@@ -49,7 +49,13 @@ export function formatText(r: Report): string {
 				continue;
 			}
 			for (const f of i.findings) {
-				const label = f.onChain ? LABEL[f.kind] : `caller-visible ${f.kind.toLowerCase()}`;
+				const label = !f.onChain
+					? `caller-visible ${f.kind.toLowerCase()}`
+					: f.disclosure === "declared"
+						? `public (declared by disclose) ${f.kind.toLowerCase()}`
+						: f.disclosure === "spec"
+							? `public (allowed by spec) ${f.kind.toLowerCase()}`
+							: LABEL[f.kind];
 				const where = f.onChain
 					? `${f.where} ${f.location}`
 					: "return value (goes to the caller, not on chain)";

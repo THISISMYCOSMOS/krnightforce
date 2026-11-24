@@ -24,6 +24,7 @@ import type {
 	SetupCall,
 } from "./harness.js";
 import { chooseSetup, unitSeed } from "./setup.js";
+import { type LoadedSpec, covers } from "./spec.js";
 import { typeToString } from "./types.js";
 import {
 	type Entropy,
@@ -69,6 +70,16 @@ export interface Finding {
 	failure: boolean;
 	detail: string;
 	evidence: Record<string, unknown>;
+	/**
+	 * How the differing value was produced: "hash" when every differing value was an
+	 * output of the runtime's hash or commitment functions in that run, "direct" otherwise.
+	 */
+	derived: "hash" | "direct" | null;
+	/**
+	 * Why a finding of a failure kind is not a failure: "declared" (no spec, and the code
+	 * disclosed it directly), "spec" (the leakage description allows it). Null otherwise.
+	 */
+	disclosure: "declared" | "spec" | null;
 	/** Design criteria (plugins/proof-kit/skills/proof-spec/references/criteria.md) a failure breaks. Empty when not a failure. */
 	criteria: number[];
 }
@@ -110,7 +121,9 @@ export interface Report {
 	source: string | null;
 	compilerVersion: string;
 	runtimeVersion: string;
-	options: Required<AttackOptions>;
+	options: { budget: number; seed: number; circuits: string[] };
+	/** The leakage description used, or null (zero-config rule). */
+	spec: string | null;
 	/** How the engine reached a state where calls run (zero-config setup search). */
 	setup: { constructor: string; prefixes: Record<string, string[]> };
 	units: UnitReport[];
@@ -125,7 +138,11 @@ export interface AttackOptions {
 	seed?: number;
 	/** Only these circuits (and the constructor if "<constructor>" is listed). */
 	circuits?: string[];
+	/** Leakage description. Without it, direct disclosures count as declared. */
+	spec?: LoadedSpec | null;
 }
+
+type Opts = { budget: number; seed: number; circuits: string[]; spec: LoadedSpec | null };
 
 export const VERSION = "0.0.1";
 const CTOR = "<constructor>";
@@ -202,10 +219,11 @@ function containsEncoding(o: Observation, key: string, enc: string): boolean {
 }
 
 export async function attack(c: Compiled, options: AttackOptions = {}): Promise<Report> {
-	const opts: Required<AttackOptions> = {
+	const opts: Opts = {
 		budget: options.budget ?? 12000,
 		seed: options.seed ?? 1,
 		circuits: options.circuits ?? [],
+		spec: options.spec ?? null,
 	};
 	const started = performance.now();
 	const setup = await chooseSetup(c, opts.seed);
@@ -247,7 +265,8 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		source: c.sourceFile,
 		compilerVersion: c.compilerVersion,
 		runtimeVersion: c.runtimeVersion,
-		options: opts,
+		options: { budget: opts.budget, seed: opts.seed, circuits: opts.circuits },
+		spec: opts.spec?.path ?? null,
 		setup: {
 			constructor: setup.constructor,
 			prefixes: Object.fromEntries(
@@ -271,7 +290,7 @@ async function attackUnit(
 	runner: Runner,
 	circuit: CircuitSpec | null,
 	constants: bigint[],
-	opts: Required<AttackOptions>,
+	opts: Opts,
 	prefix: SetupCall[],
 ): Promise<UnitReport> {
 	const t0 = performance.now();
@@ -360,6 +379,7 @@ async function attackUnit(
 				opts,
 				rnd,
 				circuit === null,
+				name,
 			),
 		);
 	}
@@ -384,9 +404,10 @@ async function attackLeaf(
 	maskRuns: Map<string, Observation>,
 	hidden: HiddenLeaf[],
 	constants: bigint[],
-	opts: Required<AttackOptions>,
+	opts: Opts,
 	rnd: () => number,
 	isConstructor: boolean,
+	unit: string,
 ): Promise<InputReport> {
 	const report: InputReport = {
 		input: h.id,
@@ -448,6 +469,7 @@ async function attackLeaf(
 				return mo.ok && valueAt(mo, baseObs, key) !== baseAt;
 			})
 			.map((m) => m.id);
+		const derived = derivedVia(baseObs, pool, key);
 		const mk = (kind: Kind, detail: string, evidence: Record<string, unknown>): Finding => ({
 			kind,
 			where,
@@ -457,6 +479,8 @@ async function attackLeaf(
 			failure: onChain && FAILURE_KINDS.includes(kind),
 			detail,
 			evidence,
+			derived,
+			disclosure: null,
 			criteria: [],
 		});
 		if (maskedBy.length > 0) {
@@ -519,6 +543,7 @@ async function attackLeaf(
 			opts.budget,
 			values,
 			obs,
+			opts.spec?.ranges.get(h.id),
 		);
 		for (const f of report.findings) {
 			const key = f.location.startsWith("cell ") ? `op ${f.location.slice(5)}` : f.location;
@@ -544,8 +569,76 @@ async function attackLeaf(
 			}
 		}
 	}
-	for (const f of report.findings) f.criteria = criteriaFor(f);
+	for (const f of report.findings) {
+		decide(f, h.id, unit, opts.spec);
+		f.criteria = criteriaFor(f);
+	}
 	return report;
+}
+
+/**
+ * The failure rule (docs/design-guide.md chapter 5). With a leakage description, a
+ * failure kind on chain fails unless mayReveal allows it. Without one, it fails only
+ * when it came through a hash or commitment, which the compiler trusts to hide;
+ * a direct disclose() is a declared disclosure.
+ */
+function decide(f: Finding, input: string, unit: string, spec: LoadedSpec | null): void {
+	f.disclosure = null;
+	if (!f.onChain || !FAILURE_KINDS.includes(f.kind)) {
+		f.failure = false;
+		return;
+	}
+	if (spec) {
+		if (covers(spec.spec, unit, input, f)) {
+			f.failure = false;
+			f.disclosure = "spec";
+		} else {
+			f.failure = true;
+		}
+		return;
+	}
+	if (f.derived === "hash") {
+		f.failure = true;
+		return;
+	}
+	f.failure = false;
+	f.disclosure = "declared";
+}
+
+function observedAt(o: Observation, key: string): unknown {
+	if (key === "result") return o.result;
+	if (key === "shape") return null;
+	return o.ops[Number(key.slice(3))];
+}
+
+/** Strip the "n" suffix normalize() puts on bigints, matching both forms. */
+function inHashes(set: Set<string>, s: string): boolean {
+	return set.has(s);
+}
+
+/** Whether every value that differs between the base run and the samples is a hash or commitment output. */
+function derivedVia(
+	baseObs: Observation,
+	pool: { o: Observation }[],
+	key: string,
+): "hash" | "direct" {
+	if (key === "shape") return "direct";
+	const baseLeaves = leafStrings(observedAt(baseObs, key));
+	let differs = false;
+	for (const x of pool) {
+		const xl = leafStrings(observedAt(x.o, key));
+		const fromBase = baseLeaves.filter((s) => !xl.includes(s));
+		const fromX = xl.filter((s) => !baseLeaves.includes(s));
+		if (fromBase.length + fromX.length === 0) continue;
+		differs = true;
+		if (
+			!fromBase.every((s) => inHashes(baseObs.hashes, s)) ||
+			!fromX.every((s) => inHashes(x.o.hashes, s))
+		) {
+			return "direct";
+		}
+	}
+	return differs ? "hash" : "direct";
 }
 
 /**
@@ -563,6 +656,12 @@ function linkPrefix(prefix: SetupCall[], baseArgs: Value[], args: Value[]): Setu
 	}));
 }
 
+/** Values lo..hi (inclusive) from the leakage description, most of the budget at most. */
+function* rangeValues([lo, hi]: [bigint, bigint], budget: number): Generator<Value> {
+	let n = 0;
+	for (let v = lo; v <= hi && n < budget; v++, n++) yield v;
+}
+
 function isPathOp(base: Observation, key: string): boolean {
 	if (!key.startsWith("op ")) return false;
 	const op = base.ops[Number(key.slice(3))] as Record<string, unknown> | undefined;
@@ -578,6 +677,7 @@ async function recover(
 	budget: number,
 	sampled: Value[],
 	sampledObs: { v: Value; o: Observation }[],
+	range?: [bigint, bigint],
 ): Promise<Map<string, { value: Value; tried: number; exact: boolean }>> {
 	const out = new Map<string, { value: Value; tried: number; exact: boolean }>();
 	const target = leafValue(base, h);
@@ -591,7 +691,9 @@ async function recover(
 	}
 	let tried = 0;
 	const want = new Map(keys.map((k) => [k, valueAt(baseObs, baseObs, k)]));
-	for (const cand of candidates(h.leaf, h.label, budget)) {
+	const numeric = h.leaf.type.kind === "uint" || h.leaf.type.kind === "field";
+	const pool = range && numeric ? rangeValues(range, budget) : candidates(h.leaf, h.label, budget);
+	for (const cand of pool) {
 		tried++;
 		if (same(cand, target)) {
 			// Trying the true value always matches; count it only as a try, the match

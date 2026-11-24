@@ -18,10 +18,13 @@ import { writeFileSync } from "node:fs";
 import { attack } from "./attack.js";
 import { formatText } from "./format.js";
 import { loadCompiled } from "./harness.js";
+import { findSpec, loadSpec } from "./spec.js";
 
 const USAGE = `usage: proofkit attack <compiled-dir> [--source <file.compact>] [--json] [--out <file>]
+                         [--spec <privacy-spec.json> | --no-spec]
                          [--budget <n>] [--seed <n>] [--circuit <name>]...
 
+Without --spec, privacy-spec.json next to the contract source is used if present.
 <compiled-dir> is the output directory given to \`compact compile\` (it holds contract/ and compiler/).
 Exit code: 0 no failures, 1 failures found, 2 usage or load error.`;
 
@@ -32,6 +35,8 @@ async function main(argv: string[]): Promise<number> {
 		return 2;
 	}
 	let source: string | undefined;
+	let specPath: string | undefined;
+	let noSpec = false;
 	let json = false;
 	let out: string | undefined;
 	let budget: number | undefined;
@@ -41,6 +46,8 @@ async function main(argv: string[]): Promise<number> {
 		const a = rest[i];
 		if (a === "--json") json = true;
 		else if (a === "--source") source = rest[++i];
+		else if (a === "--spec") specPath = rest[++i];
+		else if (a === "--no-spec") noSpec = true;
 		else if (a === "--out") out = rest[++i];
 		else if (a === "--budget") budget = Number(rest[++i]);
 		else if (a === "--seed") seed = Number(rest[++i]);
@@ -57,7 +64,16 @@ async function main(argv: string[]): Promise<number> {
 		process.stderr.write(`cannot load ${dir}: ${(e as Error).message}\n`);
 		return 2;
 	}
+	let spec = null;
+	try {
+		const p = noSpec ? null : (specPath ?? findSpec(compiled.sourceFile));
+		spec = p ? loadSpec(p) : null;
+	} catch (e) {
+		process.stderr.write(`cannot read spec: ${(e as Error).message}\n`);
+		return 2;
+	}
 	const report = await attack(compiled, {
+		spec,
 		budget,
 		seed,
 		circuits: circuits.length ? circuits : undefined,

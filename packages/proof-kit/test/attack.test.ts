@@ -60,15 +60,32 @@ describe("vault (holed)", () => {
 		).toBe(true);
 	});
 
-	it("catches the vote choice through which counter moves (A5)", () => {
+	it("finds the vote choice through which counter moves (A5); without a spec it is a declared disclosure", () => {
 		const f = findings(r, "vote", "witness:vote_choice");
 		expect(f).toHaveLength(1);
-		expect(f[0]).toMatchObject({ kind: "RECOVERABLE", where: "path", attack: "A5", failure: true });
+		expect(f[0]).toMatchObject({
+			kind: "RECOVERABLE",
+			where: "path",
+			attack: "A5",
+			derived: "direct",
+			failure: false,
+			disclosure: "declared",
+		});
 	});
 
-	it("counts exactly two failures", () => {
-		expect(r.summary.failures).toBe(2);
+	it("fails the PIN hash even without a spec: it came through a hash", () => {
+		const f = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "RECOVERABLE");
+		expect(f).toMatchObject({ derived: "hash", failure: true, disclosure: null });
+		expect(r.summary.failures).toBe(1);
 	});
+
+	it("with a spec that hides everything, the vote path fails too", async () => {
+		const spec = { path: "inline", spec: { mayReveal: [] }, ranges: new Map() };
+		const s = await attack(await loadCompiled(fixture("vault")), { spec });
+		const f = findings(s, "vote", "witness:vote_choice")[0];
+		expect(f).toMatchObject({ failure: true, disclosure: null, criteria: [7, 2] });
+		expect(s.summary.failures).toBe(2);
+	}, 120_000);
 });
 
 describe("red (holed)", () => {
@@ -79,7 +96,12 @@ describe("red (holed)", () => {
 
 	it("catches a one-bit leak (secret > 100) with boundary values", () => {
 		const f = findings(r, "threshold", "witness:secret_num");
-		expect(f[0]).toMatchObject({ kind: "PARTIAL", failure: true });
+		expect(f[0]).toMatchObject({
+			kind: "PARTIAL",
+			derived: "direct",
+			failure: false,
+			disclosure: "declared",
+		});
 	});
 
 	it("does not fail a return value: it goes to the caller, not the chain", () => {
@@ -120,7 +142,10 @@ describe("zero-config value building", () => {
 		const u = r.units.find((x) => x.circuit === "c1");
 		expect(u?.status).toBe("tested");
 		expect(u?.inputs.every((i) => i.status === "tested")).toBe(true);
-		expect(findings(r, "c1", "arg:a")[0]).toMatchObject({ kind: "EXPOSED", failure: true });
+		expect(findings(r, "c1", "arg:a")[0]).toMatchObject({
+			kind: "EXPOSED",
+			disclosure: "declared",
+		});
 	}, 60_000);
 });
 
@@ -139,9 +164,9 @@ describe("zero-config setup search", () => {
 		expect(r.units.find((u) => u.circuit === "isAdult")?.inputs[0].status).toBe("tested");
 	});
 
-	it("catches the age stored in the clear", () => {
+	it("finds the age stored in the clear (declared by disclose, so public without a spec)", () => {
 		const f = findings(r, "issue", "witness:holder_age");
-		expect(f[0]).toMatchObject({ kind: "EXPOSED", failure: true });
+		expect(f[0]).toMatchObject({ kind: "EXPOSED", derived: "direct", disclosure: "declared" });
 	});
 });
 
@@ -151,7 +176,7 @@ describe("design criteria on failures", () => {
 		const pin = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "RECOVERABLE");
 		expect(pin?.criteria).toEqual([4, 5]);
 		const vote = findings(r, "vote", "witness:vote_choice")[0];
-		expect(vote.criteria).toEqual([7, 2]);
+		expect(vote.criteria).toEqual([]);
 		const masked = findings(r, "register", "witness:secret_pin").find((x) => x.kind === "MASKED");
 		expect(masked?.criteria).toEqual([]);
 	}, 120_000);
