@@ -1,0 +1,71 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Need-based scholarship, built from docs/design-guide/walkthrough-scholarship.md.
+// Shown: "an eligible student applied in this round" (income at or below the median).
+// Hidden: student number, income as a percentage of the median, who applied.
+// Vouched for by: the scholarship office fixed at deployment.
+export ledger office_commit: Bytes<32>;
+export ledger credentials: Set<Bytes<32>>;
+export ledger round: Uint<16>;
+export ledger applications: Set<Bytes<32>>;
+export ledger applicant_count: Counter;
+
+witness office_secret(): Bytes<32>;
+witness student_no(): Uint<32>;
+witness income_pct(): Uint<16>;
+// The nonce is also the student's credential secret.
+witness cred_nonce(): Bytes<32>;
+
+export pure circuit office_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "scholar:office:v1"), secret]);
+}
+
+// Criterion 4, 5: a commitment with a fresh nonce per credential.
+circuit credential(): Bytes<32> {
+  return persistentCommit<Vector<2, Bytes<32>>>([
+    student_no() as Field as Bytes<32>,
+    income_pct() as Field as Bytes<32>
+  ], cred_nonce());
+}
+
+circuit only_office(): [] {
+  assert(office_commitment(office_secret()) == office_commit, "not the scholarship office");
+}
+
+constructor(office: Bytes<32>) {
+  office_commit = disclose(office);
+}
+
+// The office checks income papers off chain and issues a credential to every
+// student who asks, eligible or not, so issuing reveals nothing about income.
+export circuit issue(): [] {
+  only_office();
+  credentials.insert(disclose(credential()));
+}
+
+export circuit openRound(r: Uint<16>): [] {
+  only_office();
+  round = disclose(r);
+}
+
+// Criterion 8: one application per credential per round. The tag mixes in the
+// credential secret and the round, so it is not a student number and differs by round.
+circuit application_tag(): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "scholar:apply:v1"),
+    round as Field as Bytes<32>,
+    cred_nonce()
+  ]);
+}
+
+// Criterion 6: only "income at or below the median" is revealed.
+export circuit apply(): [] {
+  assert(credentials.member(disclose(credential())), "no credential");
+  assert(disclose(income_pct() <= 100), "income above the median");
+  const tag = application_tag();
+  assert(!applications.member(disclose(tag)), "already applied this round");
+  applications.insert(disclose(tag));
+  applicant_count.increment(1);
+}

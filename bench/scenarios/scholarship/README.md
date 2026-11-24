@@ -1,0 +1,3 @@
+# scholarship
+
+A need-based scholarship where a student proves only "household income at or below the median" and applies once per round. Planned from a one-line request; walkthrough: `docs/design-guide/walkthrough-scholarship.md`. The holed version has two easy mistakes. First, the one-application tag hashes the student number, so the engine recovers it (A2, criteria 4 and 8); the tag is also the same in every round. Second, an on-chain review log stores the income percentage (A1 against the leakage description, criterion 6). The fixed version builds the tag from the credential secret and the round, and keeps review off chain.

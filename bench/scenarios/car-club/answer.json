@@ -1,0 +1,93 @@
+{
+	"id": "car-club",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/club.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "registerCar",
+					"input": "witness:plate_number",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				},
+				{
+					"circuit": "proveHeldYear",
+					"input": "witness:purchase_month",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				}
+			],
+			"intendedDisclosures": [
+				{
+					"circuit": "registerCar",
+					"input": "arg:id",
+					"reason": "public membership card id"
+				},
+				{
+					"circuit": "setMonth",
+					"input": "arg:m",
+					"reason": "public club calendar"
+				},
+				{
+					"circuit": "showCar",
+					"input": "arg:id",
+					"reason": "public membership card id"
+				},
+				{
+					"circuit": "showCar",
+					"input": "witness:car_model",
+					"reason": "the member shows the model on purpose"
+				},
+				{
+					"circuit": "proveHeldYear",
+					"input": "arg:id",
+					"reason": "public membership card id"
+				}
+			]
+		},
+		{
+			"path": "fixed/club.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": [
+				{
+					"circuit": "registerCar",
+					"input": "arg:id",
+					"reason": "public membership card id"
+				},
+				{
+					"circuit": "setMonth",
+					"input": "arg:m",
+					"reason": "public club calendar"
+				},
+				{
+					"circuit": "showCar",
+					"input": "arg:id",
+					"reason": "public membership card id"
+				},
+				{
+					"circuit": "showCar",
+					"input": "witness:car_model",
+					"reason": "the member shows the model on purpose"
+				},
+				{
+					"circuit": "proveHeldYear",
+					"input": "arg:id",
+					"reason": "public membership card id"
+				},
+				{
+					"circuit": "proveHeldYear",
+					"input": "witness:purchase_month",
+					"reason": "fact purchase_month + 12 <= current_month only"
+				}
+			]
+		}
+	]
+}

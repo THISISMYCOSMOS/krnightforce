@@ -1,0 +1,87 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Car club membership card, built from docs/design-guide/walkthrough-car-club.md.
+// Shown: the car model, and the fact "held for 12 months or more".
+// Hidden: plate number, purchase month, owner.
+// Vouched for by: the club operator fixed at deployment.
+export ledger operator_commit: Bytes<32>;
+export ledger cars: Map<Bytes<32>, Bytes<32>>;
+export ledger plate_tags: Set<Bytes<32>>;
+export ledger current_month: Uint<16>;
+export ledger shown_model: Map<Bytes<32>, Uint<16>>;
+export ledger veterans: Set<Bytes<32>>;
+
+witness operator_secret(): Bytes<32>;
+witness car_model(): Uint<16>;
+witness purchase_month(): Uint<16>;
+witness plate_number(): Uint<32>;
+// The nonce is also the member's card secret: only the operator and the member know it.
+witness car_nonce(): Bytes<32>;
+
+export pure circuit operator_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "carclub:operator:v1"), secret]);
+}
+
+// Criterion 4, 5: a commitment with a fresh nonce per car record. The owner's
+// name is never on chain: the operator checks it off chain.
+circuit record(): Bytes<32> {
+  return persistentCommit<Vector<3, Bytes<32>>>([
+    car_model() as Field as Bytes<32>,
+    purchase_month() as Field as Bytes<32>,
+    plate_number() as Field as Bytes<32>
+  ], car_nonce());
+}
+
+circuit only_operator(): [] {
+  assert(operator_commitment(operator_secret()) == operator_commit, "not the operator");
+}
+
+// Criterion 4: the duplicate check mixes in the operator's secret, so the tag
+// cannot be recomputed from a guessed plate number.
+circuit plate_tag(): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "carclub:plate:v1"),
+    operator_secret(),
+    plate_number() as Field as Bytes<32>
+  ]);
+}
+
+constructor(operator: Bytes<32>) {
+  operator_commit = disclose(operator);
+}
+
+// The operator checks the registration papers off chain, then records the car.
+export circuit registerCar(id: Bytes<32>): [] {
+  only_operator();
+  const tag = plate_tag();
+  assert(!plate_tags.member(disclose(tag)), "car already registered");
+  plate_tags.insert(disclose(tag));
+  cars.insert(disclose(id), disclose(record()));
+}
+
+// The operator moves the club calendar forward (public, months since 2000-01).
+export circuit setMonth(m: Uint<16>): [] {
+  only_operator();
+  current_month = disclose(m);
+}
+
+// The member proves the record is theirs by opening the commitment.
+circuit owns(id: Bytes<32>): [] {
+  assert(cars.member(disclose(id)), "unknown card");
+  assert(cars.lookup(disclose(id)) == record(), "not your car");
+}
+
+// Criterion 6: the model is revealed on purpose.
+export circuit showCar(id: Bytes<32>): [] {
+  owns(id);
+  shown_model.insert(disclose(id), disclose(car_model()));
+}
+
+// Criterion 6: only "held for 12 months or more", against the public club month.
+export circuit proveHeldYear(id: Bytes<32>): [] {
+  owns(id);
+  assert(disclose(purchase_month() + 12 <= current_month), "held less than a year");
+  veterans.insert(disclose(id));
+}

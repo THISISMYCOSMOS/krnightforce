@@ -22,7 +22,7 @@ import {
 	type SetupCall,
 } from "./harness.js";
 import { type CType, typeToString } from "./types.js";
-import { type Value, baseLeafValue, leaves, prng, setLeaf } from "./values.js";
+import { type Value, baseLeafValue, leaves, prng, same, setLeaf } from "./values.js";
 
 /**
  * Zero-config setup search. Contracts often reject a call unless the deployment is
@@ -152,13 +152,31 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 	const chosen = best as { runner: Runner; label: string; ok: Set<string> };
 	const prefixes = new Map<string, SetupCall[]>();
 	const ready = c.circuits.filter((x) => chosen.ok.has(x.name));
-	for (const circuit of c.circuits) {
+	// One setup call first, then two (e.g. register a car, then move the club calendar).
+	const candidates: CircuitSpec[][] = [
+		...ready.map((s) => [s]),
+		...ready.flatMap((s) => ready.filter((t) => t !== s).map((t) => [s, t])),
+	];
+	// Setup arguments: the base values, then numbers at their maximum (a calendar or
+	// counter that must be past the caller's hidden value).
+	const atMax = (s: CircuitSpec, args: Value[]): Value[] =>
+		args.map((v, i) =>
+			s.args[i].type.kind === "uint" ? (s.args[i].type as { max: bigint }).max : v,
+		);
+	search: for (const circuit of c.circuits) {
 		if (chosen.ok.has(circuit.name)) continue;
-		for (const s of ready) {
-			const prefix = [{ circuit: s.name, args: base(chosen.runner, s).args }];
-			if ((await chosen.runner.observeCall(circuit, base(chosen.runner, circuit), prefix)).ok) {
-				prefixes.set(circuit.name, prefix);
-				break;
+		for (const seq of candidates) {
+			for (const variant of [false, true]) {
+				const prefix = seq.map((s) => {
+					const args = base(chosen.runner, s).args;
+					return { circuit: s.name, args: variant ? atMax(s, args) : args };
+				});
+				if (variant && prefix.every((p, i) => same(p.args, base(chosen.runner, seq[i]).args)))
+					continue;
+				if ((await chosen.runner.observeCall(circuit, base(chosen.runner, circuit), prefix)).ok) {
+					prefixes.set(circuit.name, prefix);
+					continue search;
+				}
 			}
 		}
 	}

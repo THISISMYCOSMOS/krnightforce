@@ -1,0 +1,90 @@
+{
+	"contract": "club.compact",
+	"hidden": [
+		{
+			"input": "witness:plate_number",
+			"range": "0..9999",
+			"why": "identifies the car and its owner; the scenario uses the last four digits, a real plate space (about 3.6e8) is still enumerable offline"
+		},
+		{
+			"input": "witness:purchase_month",
+			"range": "0..400",
+			"why": "purchase date, months since 2000-01"
+		},
+		{
+			"input": "witness:car_model",
+			"range": "0..999",
+			"why": "shown only when the member chooses to"
+		},
+		{
+			"input": "witness:car_nonce",
+			"why": "commitment nonce, also the member card secret"
+		},
+		{
+			"input": "witness:operator_secret",
+			"why": "operator key"
+		}
+	],
+	"mayReveal": [
+		{
+			"circuit": "registerCar",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public membership card id"
+		},
+		{
+			"circuit": "setMonth",
+			"input": "arg:m",
+			"kind": "value",
+			"why": "public club calendar"
+		},
+		{
+			"circuit": "showCar",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public membership card id"
+		},
+		{
+			"circuit": "showCar",
+			"input": "witness:car_model",
+			"kind": "value",
+			"why": "the member shows the car model on purpose"
+		},
+		{
+			"circuit": "proveHeldYear",
+			"input": "arg:id",
+			"kind": "value",
+			"why": "public membership card id"
+		},
+		{
+			"circuit": "proveHeldYear",
+			"input": "witness:purchase_month",
+			"kind": "fact",
+			"fact": "purchase_month + 12 <= current_month",
+			"why": "veteran badge needs only 'held a year or more'"
+		}
+	],
+	"acceptedLeakage": [
+		"that a car was registered, shown or proven, and when",
+		"that the same card id was used for showCar and proveHeldYear (the card id is public)",
+		"the number of registered cars"
+	],
+	"unlinkable": [],
+	"vouchedBy": [
+		{
+			"input": "witness:car_model",
+			"by": "operator",
+			"how": "only the operator can call registerCar, after checking the registration papers off chain"
+		},
+		{
+			"input": "witness:purchase_month",
+			"by": "operator",
+			"how": "same"
+		},
+		{
+			"input": "witness:plate_number",
+			"by": "operator",
+			"how": "same"
+		}
+	]
+}

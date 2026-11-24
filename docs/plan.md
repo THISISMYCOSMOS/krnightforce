@@ -147,8 +147,9 @@
   - 사용자 흐름 1~5단계와 설계안 형식(다섯 부분)
   - 엔진이 실패마다 어긴 기준 번호를 붙임(`criteria`)
   - 건강 정보 예제로 설계 → 공격까지 끝까지 확인([따라 하기](design-guide/walkthrough-health-credential.md))
-- 시나리오 5쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch. 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
-- 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 5쌍이 정답표대로 나오고(고친 판 실패 0), 시험 31개가 통과합니다.
+- 시나리오 7쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship. 뒤의 둘은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
+- 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 7쌍이 정답표대로 나오고(고친 판 실패 0), 시험 35개가 통과합니다.
+- 시작 상태 찾기: 사전 호출을 두 개까지 찾고, 숫자 인자를 최댓값으로도 시도합니다(2026-11-24, car-club의 `proveHeldYear`). 두 witness 사이의 관계(회원 키 = hash(회원 비밀))는 아직 맞추지 못합니다.
 
 **남은 것**: 아래 다음 작업, 그리고 3~4주차 항목.
 
@@ -174,7 +175,7 @@
 2. **시각화(`/proof:map`).** 엔진 JSON으로 "숨긴 값 → 회로 → 체인에 남는 것" Mermaid 그림을 4색(숨김·증명만·공개·위험, 회색 시험 못 함)으로 그립니다. 구멍 판과 고친 판을 나란히 보여 줍니다.
    - 완료 기준: 건강 정보 예제의 두 판 그림에서 구멍 판은 나이·질병 코드가 위험 색, 고친 판은 증명만 색입니다.
 3. **A2 보완(assert 오라클).** 회로 밖에서 만든 해시를 회로 안에서 `assert(hash(witness) == 저장값)`으로만 확인하는 계약이 대상입니다. 공격자는 후보를 넣어 회로를 돌려 보고, 통과하는 후보를 찾습니다. 엔진도 이 방식을 씁니다.
-   - 저장된 해시와 witness가 맞는 상태를 만들려면, 회로 안 해시 값 기록과 두 단계 시작 상태 찾기도 필요합니다.
+   - 저장된 해시와 witness가 맞는 상태를 만들려면, 회로 안 해시 값 기록과 두 단계 시작 상태 찾기도 필요합니다. 두 단계 사전 호출은 2026-11-24에 들어갔고, witness 사이의 관계 맞추기가 남았습니다.
    - 완료 기준: 직접 만든 같은 유형의 시나리오에서 숨긴 값을 복원합니다. 해커톤 사례에서 실제로 나온 실수입니다.
 4. 시나리오를 CI에서 돌리는 bench 러너를 만듭니다.
 5. vitest 내보내기(`proof-attack.test.ts`)와 `attack-plan.md` 생성

@@ -19,7 +19,7 @@
 - **해시를 거쳤는지 실행으로 구분(`derived`).** 실행 중 `persistentHash`, `persistentCommit`, `transientHash`, `transientCommit`의 출력을 기록하고, 달라진 공개 값이 그 출력인지 확인합니다(`src/harness.ts`). LLM은 코드를 읽고 "해시 같다"고 짐작할 뿐입니다.
 - **컴파일러로 확인한 사실.** 0.36.0으로 직접 컴파일한 실험 계약 38개(p01~p28과 변형)와 결과가 있습니다(`docs/design-guide/compiler-probe/`). 예를 들어 `persistentCommit`은 상수 소금이어도 `disclose()` 없이 통과하고(p05b), `blockTimeGte`는 비교 시각을 공개합니다(p28).
 - **설정 없는 시작 상태 찾기.** pure 회로·해시로 생성자 인자를 맞추고, 필요한 회로를 먼저 불러서 실행 가능한 상태를 찾습니다(`src/setup.ts`).
-- **정답표 대조.** 구멍 판 / 고친 판 5쌍이 정답표대로 나오는지 시험이 자동으로 확인합니다(`bench/scenarios/`, `packages/proof-kit/test/bench.test.ts`).
+- **정답표 대조.** 구멍 판 / 고친 판 7쌍이 정답표대로 나오는지 시험이 자동으로 확인합니다(`bench/scenarios/`, `packages/proof-kit/test/bench.test.ts`).
 - **실측 수치.** 비공개 표본 13개 레포에서 새 판정 규칙을 적용하니 실패가 193건에서 2건으로 줄었고, 남은 2건은 사람이 판정한 진짜 구멍이었습니다(`docs/plan.md` 12절).
 
 ### Q3. 그럼 겹치는 부분은 문제인가?
@@ -73,7 +73,7 @@
 - **무엇**: patterns.md의 패턴마다 구멍 판 / 고친 판 쌍을 두고, 고친 판이 실제로 통과하는 것을 시험으로 보장합니다.
 - **이유**: "이렇게 고치면 된다"는 LLM도 말하지만, 그 말이 맞는다는 보장은 실행만 줍니다.
 - **확인**: `bench.test.ts`
-- **상태**: 부분 완료. 5쌍(해시 커밋, 상수 소금, 사실만 공개, 경로, 건강 정보)은 있습니다. nullifier·소유 증명·발급자 예제는 컴파일만 확인했고 공격은 없습니다(`docs/design-guide/examples/`).
+- **상태**: 부분 완료. 7쌍(해시 커밋, 상수 소금, 사실만 공개, 경로, 건강 정보, 차 동호회, 장학금)은 있습니다. nullifier·소유 증명·발급자 예제는 컴파일만 확인했고 공격은 없습니다(`docs/design-guide/examples/`).
 
 ### Q11. assert 오라클(A2 확장)
 - **무엇**: 회로 밖에서 만든 해시를 회로 안에서 `assert`로만 확인하는 계약에서, 후보를 넣어 `assert`가 통과하는 값을 찾습니다.

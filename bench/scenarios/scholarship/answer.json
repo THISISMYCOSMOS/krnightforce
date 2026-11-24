@@ -1,0 +1,53 @@
+{
+	"id": "scholarship",
+	"compilerVersion": "0.36.0",
+	"spec": "privacy-spec.json",
+	"contracts": [
+		{
+			"path": "holed/scholarship.compact",
+			"variant": "holed",
+			"expectFailures": true,
+			"findings": [
+				{
+					"circuit": "apply",
+					"input": "witness:student_no",
+					"attack": "A2",
+					"kind": "RECOVERABLE",
+					"where": "value"
+				},
+				{
+					"circuit": "apply",
+					"input": "witness:income_pct",
+					"attack": "A1",
+					"kind": "EXPOSED",
+					"where": "value"
+				}
+			],
+			"intendedDisclosures": [
+				{
+					"circuit": "openRound",
+					"input": "arg:r",
+					"reason": "public round number"
+				}
+			]
+		},
+		{
+			"path": "fixed/scholarship.compact",
+			"variant": "fixed",
+			"expectFailures": false,
+			"findings": [],
+			"intendedDisclosures": [
+				{
+					"circuit": "openRound",
+					"input": "arg:r",
+					"reason": "public round number"
+				},
+				{
+					"circuit": "apply",
+					"input": "witness:income_pct",
+					"reason": "fact income_pct <= 100 only"
+				}
+			]
+		}
+	]
+}

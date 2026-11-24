@@ -44,4 +44,4 @@ Start from an idea, or from an existing contract (then draft step 1 from its exp
 
 **Step 5. Check and fix.** After the contract is written, run `/proof:attack`. For each failure, name the criterion from its `criteria` field, give the matching pattern from `references/patterns.md` (pitfall first, then the fix), and rerun until the tests pass. Then run `/proof:map` (planned) to draw the result.
 
-A worked example of all five steps: `docs/design-guide/walkthrough-health-credential.md`.
+Worked examples of all five steps: `docs/design-guide/walkthrough-health-credential.md`; from a one-line request, with step 1 planning the situation: `docs/design-guide/walkthrough-car-club.md`, `docs/design-guide/walkthrough-scholarship.md`.
