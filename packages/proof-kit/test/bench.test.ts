@@ -79,10 +79,22 @@ describe("proofkit bench", () => {
 		expect(b.totals.contracts).toBe(b.rows.length);
 		expect(b.totals.contracts).toBeGreaterThan(5);
 		expect(b.totals.failures).toBeGreaterThan(0);
+		expect(b.totals.timeouts).toBe(0);
+		expect(b.totals.loadErrors).toBe(0);
 		const md = corpusMarkdown(b);
 		for (const row of b.rows) {
 			const last = row.path.split("/").at(-1) as string;
 			expect(md).not.toContain(last);
 		}
 	}, 600_000);
+
+	it("a contract that exceeds the timeout is reported as a timeout, not a load error", async () => {
+		const one = join(managed, `${names[0]}__holed`);
+		const b = await runCorpus(one, { timeoutSeconds: 0.05 });
+		expect(b.totals.contracts).toBe(1);
+		expect(b.totals.timeouts).toBe(1);
+		expect(b.totals.loadErrors).toBe(0);
+		expect(b.rows[0].status).toBe("timeout");
+		expect(corpusMarkdown(b)).toContain("시간 초과 1");
+	}, 60_000);
 });
