@@ -13,9 +13,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+} from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { type Report, attack } from "./attack.js";
 import { loadCompiled } from "./harness.js";
 import { loadSpec } from "./spec.js";
@@ -278,7 +289,7 @@ export function scenarioMarkdown(b: ScenarioBench): string {
 export interface CorpusRow {
 	/** Path relative to the corpus root. Private: may name a third-party repo. */
 	path: string;
-	status: "ok" | "load error";
+	status: "ok" | "load error" | "timeout";
 	error?: string;
 	circuits: number;
 	untestableUnits: number;
@@ -294,6 +305,7 @@ export interface CorpusBench {
 	totals: {
 		contracts: number;
 		loadErrors: number;
+		timeouts: number;
 		circuits: number;
 		untestableUnits: number;
 		inputsTested: number;
@@ -329,54 +341,124 @@ export function findCompiled(root: string): string[] {
 	return out.sort();
 }
 
-/** Attack every compiled contract under `root` without a spec (the zero-config rule). */
-export async function runCorpus(root: string): Promise<CorpusBench> {
+/** Default per-contract limit for corpus mode, in seconds. */
+export const DEFAULT_CORPUS_TIMEOUT_S = 180;
+
+export interface CorpusOptions {
+	/** Seconds each contract may run before it counts as a timeout (default 180). */
+	timeoutSeconds?: number;
+}
+
+/**
+ * How to start this package's CLI in a child: the built `cli.js` next to this file, or
+ * `cli.ts` under the tsx loader when running from source. Parent execArgv is carried over
+ * (so `npx tsx` and the built CLI both work).
+ */
+function cliArgs(): string[] {
+	const here = fileURLToPath(import.meta.url);
+	const fromSrc = here.endsWith(".ts");
+	const cli = join(here, "..", fromSrc ? "cli.ts" : "cli.js");
+	const args = [...process.execArgv];
+	if (fromSrc && !args.some((a) => a.includes("tsx"))) {
+		args.push("--import", pathToFileURL(createRequire(import.meta.url).resolve("tsx/esm")).href);
+	}
+	return [...args, cli];
+}
+
+interface ChildResult {
+	timedOut: boolean;
+	/** First line of stderr, only used when no report came back. */
+	firstError: string;
+}
+
+/** Run one attack in its own process; stdout and stderr are captured, never forwarded. */
+function runChild(dir: string, out: string, timeoutMs: number): Promise<ChildResult> {
+	const args = cliArgs();
+	return new Promise((done) => {
+		let stderr = "";
+		let timedOut = false;
+		const child = spawn(
+			process.execPath,
+			[...args, "attack", dir, "--no-spec", "--json", "--out", out],
+			{ stdio: ["ignore", "ignore", "pipe"] },
+		);
+		const timer = setTimeout(() => {
+			timedOut = true;
+			child.kill("SIGKILL");
+		}, timeoutMs);
+		child.stderr.on("data", (d: Buffer) => {
+			if (stderr.length < 4096) stderr += d.toString();
+		});
+		const finish = (extra = "") => {
+			clearTimeout(timer);
+			const line = (stderr || extra).split("\n").find((l) => l.trim()) ?? "";
+			done({ timedOut, firstError: line.slice(0, 200) });
+		};
+		child.on("error", (e) => finish(String(e.message)));
+		child.on("close", () => finish());
+	});
+}
+
+/**
+ * Attack every compiled contract under `root` without a spec (the zero-config rule).
+ * Each contract runs in a child process, so a trapped WASM runtime or a runaway circuit
+ * cannot affect the next one; child output is captured and dropped.
+ */
+export async function runCorpus(root: string, opts: CorpusOptions = {}): Promise<CorpusBench> {
+	const limit = opts.timeoutSeconds ?? DEFAULT_CORPUS_TIMEOUT_S;
 	const rows: CorpusRow[] = [];
-	for (const dir of findCompiled(root)) {
-		const row: CorpusRow = {
-			path: relative(resolve(root), dir) || ".",
-			status: "ok",
-			circuits: 0,
-			untestableUnits: 0,
-			tested: 0,
-			untestable: 0,
-			failures: 0,
-			byKind: {},
-		};
-		// Third-party contract code runs while loading and attacking; anything it prints
-		// could name the repo in a public log, so console output is muted meanwhile.
-		const saved = {
-			log: console.log,
-			info: console.info,
-			warn: console.warn,
-			error: console.error,
-			debug: console.debug,
-		};
-		const mute = () => {};
-		console.log = console.info = console.warn = console.error = console.debug = mute;
-		try {
-			const r = await attack(await loadCompiled(dir), { spec: null });
-			row.circuits = r.units.filter((u) => u.circuit !== "<constructor>").length;
-			row.untestableUnits = r.units.filter((u) => u.status === "untestable").length;
-			row.tested = r.summary.tested;
-			row.untestable = r.summary.untestable;
-			row.failures = r.summary.failures;
-			for (const u of r.units)
-				for (const i of u.inputs)
-					for (const f of i.findings) {
-						if (!f.failure) continue;
-						const k = `${f.attack} ${f.kind}`;
-						row.byKind[k] = (row.byKind[k] ?? 0) + 1;
-					}
-		} catch (e) {
-			row.status = "load error";
-			row.error = String((e as Error).message ?? e)
-				.split("\n")[0]
-				.slice(0, 200);
-		} finally {
-			Object.assign(console, saved);
+	const tmp = mkdtempSync(join(tmpdir(), "proofkit-corpus-"));
+	// The temp dir holds full per-contract reports (private data): remove it on Ctrl-C too.
+	const cleanup = () => rmSync(tmp, { recursive: true, force: true });
+	const onSignal = (sig: NodeJS.Signals) => {
+		cleanup();
+		process.kill(process.pid, sig);
+	};
+	process.once("SIGINT", onSignal);
+	process.once("SIGTERM", onSignal);
+	try {
+		for (const dir of findCompiled(root)) {
+			const row: CorpusRow = {
+				path: relative(resolve(root), dir) || ".",
+				status: "ok",
+				circuits: 0,
+				untestableUnits: 0,
+				tested: 0,
+				untestable: 0,
+				failures: 0,
+				byKind: {},
+			};
+			const out = join(tmp, `${rows.length}.json`);
+			const res = await runChild(dir, out, limit * 1000);
+			if (res.timedOut) {
+				row.status = "timeout";
+				row.error = `timed out after ${limit}s`;
+			} else {
+				try {
+					const r = JSON.parse(readFileSync(out, "utf8")) as Report;
+					row.circuits = r.units.filter((u) => u.circuit !== "<constructor>").length;
+					row.untestableUnits = r.units.filter((u) => u.status === "untestable").length;
+					row.tested = r.summary.tested;
+					row.untestable = r.summary.untestable;
+					row.failures = r.summary.failures;
+					for (const u of r.units)
+						for (const i of u.inputs)
+							for (const f of i.findings) {
+								if (!f.failure) continue;
+								const k = `${f.attack} ${f.kind}`;
+								row.byKind[k] = (row.byKind[k] ?? 0) + 1;
+							}
+				} catch {
+					row.status = "load error";
+					row.error = res.firstError || "no report";
+				}
+			}
+			rows.push(row);
 		}
-		rows.push(row);
+	} finally {
+		process.off("SIGINT", onSignal);
+		process.off("SIGTERM", onSignal);
+		cleanup();
 	}
 	const ok = rows.filter((r) => r.status === "ok");
 	const byKind: Record<string, number> = {};
@@ -385,7 +467,8 @@ export async function runCorpus(root: string): Promise<CorpusBench> {
 	return {
 		totals: {
 			contracts: rows.length,
-			loadErrors: rows.length - ok.length,
+			loadErrors: rows.filter((r) => r.status === "load error").length,
+			timeouts: rows.filter((r) => r.status === "timeout").length,
 			circuits: ok.reduce((n, r) => n + r.circuits, 0),
 			untestableUnits: ok.reduce((n, r) => n + r.untestableUnits, 0),
 			inputsTested: ok.reduce((n, r) => n + r.tested, 0),
@@ -407,7 +490,7 @@ export function corpusMarkdown(b: CorpusBench): string {
 		"",
 		"| 항목 | 값 |",
 		"| --- | --- |",
-		`| 계약 | ${t.contracts} (불러오기 오류 ${t.loadErrors}) |`,
+		`| 계약 | ${t.contracts} (불러오기 오류 ${t.loadErrors}, 시간 초과 ${t.timeouts}) |`,
 		`| 회로 | ${t.circuits} (시험 못 함 ${t.untestableUnits}) |`,
 		`| 입력 | 시험함 ${t.inputsTested}, 시험 못 함 ${t.inputsUntestable}${inputs ? ` (${pct(t.inputsUntestable / inputs)})` : ""} |`,
 		`| 실패 | ${t.failures} (실패가 하나라도 있는 계약 ${t.contractsWithFailure}) |`,
