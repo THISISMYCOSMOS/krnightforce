@@ -77,11 +77,35 @@ export interface Observation {
 	 * value derived through a hash or commitment from a direct disclose().
 	 */
 	hashes: Set<string>;
+	/**
+	 * Raw outputs of the hash and commitment functions during the attacked call only, in
+	 * order, also when the call failed. The setup search uses them as candidate values
+	 * for setup-call arguments (a key the circuit derives from a secret before checking
+	 * that it was registered).
+	 */
+	targetLog: unknown[];
+}
+
+/**
+ * A setup-call argument computed per run instead of fixed, so it follows the attacked
+ * assignment: from a witness through a function (a pure circuit or persistentHash), or
+ * the n-th hash/commitment output the attacked circuit computes in a probe run made
+ * after the earlier setup calls.
+ */
+export class ArgRef {
+	constructor(
+		readonly label: string,
+		readonly from: { witness: string; fn: (x: Value) => Value } | { log: number },
+	) {}
+	toString(): string {
+		return this.label;
+	}
 }
 
 /** A circuit call made before the attacked one, to reach a state where it can run. */
 export interface SetupCall {
 	circuit: string;
+	/** Fixed values, or ArgRef values resolved for each run. */
 	args: Value[];
 }
 
@@ -104,9 +128,10 @@ export interface Assignment {
 	 * Give one witness a different value on some of its reads in the attacked call
 	 * (not in setup calls): "first" replaces the first read, "rest" every later read.
 	 * Used by the split-witness attack (T2). `key` is the read key from
-	 * `Observation.witnessReads`; only reads with that key are split.
+	 * `Observation.witnessReads`; only reads with that key are split. With `setup`, the
+	 * setup calls also read the split value.
 	 */
-	split?: { key: string; value: Value; at: "first" | "rest" };
+	split?: { key: string; value: Value; at: "first" | "rest"; setup?: boolean };
 }
 
 export const PK = "0".repeat(64);
@@ -350,10 +375,13 @@ export class Runner {
 			c.constructorArgs.map((x) => x.value),
 		/** Witnesses derived from other witnesses (see setup.ts). */
 		readonly relations: WitnessRelation[] = [],
+		/** Base witness values chosen by the setup search instead of the defaults. */
+		readonly overrides: Record<string, Value> = {},
 	) {
 		const rnd = prng(11);
 		const witnesses: Record<string, Any> = {};
 		for (const w of c.witnesses) this.defaults[w.name] = defaultValue(w.type, w.name, rnd);
+		for (const [k, v] of Object.entries(overrides)) if (k in this.defaults) this.defaults[k] = v;
 		for (const r of relations) this.defaults[r.target] = r.fn(this.defaults[r.source]);
 		for (const w of c.witnesses) {
 			witnesses[w.name] = (ctx: Any, ...args: unknown[]) => {
@@ -368,6 +396,10 @@ export class Runner {
 					this.reads[key] = n;
 					const sp = a.split;
 					if (sp && sp.key === key && (sp.at === "first" ? n === 1 : n > 1)) v = sp.value;
+				} else if (this.phase === "circuit" && a.split?.setup) {
+					// The setup calls see the split value too: the attacker's earlier state (a
+					// ticket bought with one number) matches the read the circuit does not bind.
+					if (a.split.key === readKey(w.name, args)) v = a.split.value;
 				}
 				return [ctx.privateState, v];
 			};
@@ -473,6 +505,7 @@ export class Runner {
 			calledInCircuit: new Set(),
 			witnessReads: {},
 			hashes: d.hashes,
+			targetLog: [],
 		};
 	}
 
@@ -485,6 +518,53 @@ export class Runner {
 			privateState: {},
 		});
 		return this.contract.circuits[name](ctx, ...args);
+	}
+
+	/**
+	 * Resolve ArgRef setup arguments for one run. A log reference runs the attacked
+	 * circuit once from the current state (a probe, not counted as the attacked call and
+	 * not split) and takes the n-th hash or commitment output it computed, even if the
+	 * probe then failed.
+	 */
+	private async resolveArgs(
+		args: Value[],
+		a: Assignment,
+		target: string,
+		state: Any,
+	): Promise<Value[]> {
+		if (!args.some((x) => x instanceof ArgRef)) return args;
+		let probe: unknown[] | null = null;
+		const out: Value[] = [];
+		for (const x of args) {
+			if (!(x instanceof ArgRef)) {
+				out.push(x);
+				continue;
+			}
+			if ("witness" in x.from) {
+				out.push(x.from.fn(this.witnessValue(x.from.witness, a)));
+				continue;
+			}
+			if (probe === null) {
+				const g = globalThis as { __proofkitHashLog?: unknown[] };
+				const saved = g.__proofkitHashLog;
+				const plog: unknown[] = [];
+				g.__proofkitHashLog = plog;
+				const wasTarget = this.target;
+				this.target = false;
+				try {
+					await this.call(target, state, a.args);
+				} catch {
+					// Expected: the probe usually fails at the check the setup call satisfies.
+				} finally {
+					this.target = wasTarget;
+					g.__proofkitHashLog = saved;
+				}
+				probe = plog;
+			}
+			if (x.from.log >= probe.length) throw new Error(`no hash output #${x.from.log}`);
+			out.push(probe[x.from.log]);
+		}
+		return out;
 	}
 
 	/**
@@ -508,13 +588,17 @@ export class Runner {
 		let state = d.state;
 		for (const p of prefix) {
 			try {
-				const r = await this.call(p.circuit, state, p.args);
+				const args = await this.resolveArgs(p.args, a, circuit.name, state);
+				g.__proofkitHashLog = log;
+				const r = await this.call(p.circuit, state, args);
 				state = r.context.callContext.currentQueryContext.state;
 			} catch (e) {
 				g.__proofkitHashLog = undefined;
 				return failed(`setup ${p.circuit}: ${errorText(e)}`, d.called, new Set());
 			}
 		}
+		g.__proofkitHashLog = log;
+		const logStart = log.length;
 		this.calledInCircuit = new Set();
 		this.reads = {};
 		this.target = true;
@@ -531,11 +615,13 @@ export class Runner {
 				calledInCircuit: this.calledInCircuit,
 				witnessReads: { ...this.reads },
 				hashes: new Set([...d.hashes, ...collectHashes(log)]),
+				targetLog: log.slice(logStart),
 			};
 		} catch (e) {
 			return {
 				...failed(errorText(e), d.called, this.calledInCircuit),
 				witnessReads: { ...this.reads },
+				targetLog: log.slice(logStart),
 			};
 		} finally {
 			this.target = false;
@@ -546,6 +632,7 @@ export class Runner {
 
 function failed(error: string, ctor: Set<string>, circ: Set<string>): Observation {
 	return {
+		targetLog: [],
 		ok: false,
 		error,
 		ops: [],

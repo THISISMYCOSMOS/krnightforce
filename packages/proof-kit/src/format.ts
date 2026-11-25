@@ -35,6 +35,8 @@ export function formatText(r: Report): string {
 	for (const w of r.setup.witnesses ?? []) lines.push(`setup: witness ${w}`);
 	for (const [k, v] of Object.entries(r.setup.prefixes))
 		lines.push(`setup: ${k} runs after ${v.join(", ")}`);
+	for (const [k, v] of Object.entries(r.setup.args ?? {}))
+		lines.push(`setup: ${k} base arguments ${v}`);
 	for (const u of r.units) {
 		if (u.status === "untestable") {
 			lines.push(`\n[${u.circuit}] UNTESTABLE: ${u.reason}`);

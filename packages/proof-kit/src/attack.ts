@@ -127,7 +127,13 @@ export interface Report {
 	/** The leakage description used, or null (zero-config rule). */
 	spec: string | null;
 	/** How the engine reached a state where calls run (zero-config setup search). */
-	setup: { constructor: string; prefixes: Record<string, string[]>; witnesses: string[] };
+	setup: {
+		constructor: string;
+		prefixes: Record<string, string[]>;
+		witnesses: string[];
+		/** Base arguments the setup search chose for a circuit, shown as values. */
+		args: Record<string, string>;
+	};
 	units: UnitReport[];
 	pureCircuits: string[];
 	/**
@@ -274,7 +280,9 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		spec: options.spec ?? null,
 	};
 	const started = performance.now();
-	const setup = await chooseSetup(c, opts.seed);
+	const setup = await chooseSetup(c, opts.seed, {
+		constants: sourceConstants(c.sourceFile),
+	});
 	const runner = setup.runner;
 	const constants = sourceConstants(c.sourceFile);
 	const units: UnitReport[] = [];
@@ -291,6 +299,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 					constants,
 					opts,
 					setup.prefixes.get(circuit.name) ?? [],
+					setup.args.get(circuit.name),
 				),
 			);
 	}
@@ -318,7 +327,10 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		spec: opts.spec?.path ?? null,
 		setup: {
 			constructor: setup.constructor,
-			witnesses: setup.witnesses,
+			witnesses: [...setup.witnesses, ...setup.overrides],
+			args: Object.fromEntries(
+				[...setup.args].map(([k, v]) => [k, v.map((x) => show(x)).join(", ")]),
+			),
 			prefixes: Object.fromEntries(
 				[...setup.prefixes].map(([k, v]) => [k, v.map((x) => x.circuit)]),
 			),
@@ -344,6 +356,7 @@ async function attackUnit(
 	constants: bigint[],
 	opts: Opts,
 	prefix: SetupCall[],
+	argBase?: Value[],
 ): Promise<UnitReport> {
 	const t0 = performance.now();
 	const runs0 = runner.runs;
@@ -373,12 +386,21 @@ async function attackUnit(
 			}
 			base.args.push(v);
 		});
+		// Arguments the setup search chose because the defaults did not run.
+		if (argBase) base.args = [...argBase];
 	}
 
-	const observe = (a: Assignment) =>
-		circuit
-			? runner.observeCall(circuit, a, linkPrefix(prefix, base.args, a.args))
-			: runner.observeConstructor(a);
+	// Setup calls that passed the attacked call's base argument values get the varied
+	// values too (an id registered then looked up). Equal values can also be a
+	// coincidence (two secrets with the same default); when the linked setup call fails,
+	// run again with the setup calls as found.
+	const observe = async (a: Assignment): Promise<Observation> => {
+		if (!circuit) return runner.observeConstructor(a);
+		const linked = linkPrefix(prefix, base.args, a.args);
+		const o = await runner.observeCall(circuit, a, linked);
+		if (o.ok || linked === prefix || !(o.error ?? "").startsWith("setup ")) return o;
+		return runner.observeCall(circuit, a, prefix);
+	};
 	const baseObs = await observe(base);
 	if (!baseObs.ok) {
 		return {
@@ -435,7 +457,7 @@ async function attackUnit(
 			),
 		);
 	}
-	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd);
+	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd, prefix.length > 0);
 	return {
 		circuit: name,
 		status: "tested",
@@ -460,6 +482,7 @@ async function splitWitnessAttack(
 	observe: (a: Assignment) => Promise<Observation>,
 	inputs: InputReport[],
 	rnd: () => number,
+	hasSetup: boolean,
 ): Promise<void> {
 	for (const [key, reads] of Object.entries(baseObs.witnessReads)) {
 		// Reads are counted per witness and arguments: a witness that takes an argument
@@ -491,16 +514,24 @@ async function splitWitnessAttack(
 			}
 		}
 		const accepted: { read: string; label: string; value: string }[] = [];
-		for (const at of ["rest", "first"] as const) {
-			for (const alt of alts) {
-				const o = await observe({ ...base, split: { key, value: alt.value, at } });
-				if (o.ok) {
-					accepted.push({
-						read: at === "first" ? "read 1" : `reads 2..${reads}`,
-						label: alt.label,
-						value: show(alt.value),
+		// Without and then with the setup calls reading the split value: an attacker's
+		// earlier state (a ticket bought with one number) can match the unbound read.
+		for (const setupToo of [false, true]) {
+			if (setupToo && (accepted.length > 0 || !hasSetup)) break;
+			for (const at of ["rest", "first"] as const) {
+				for (const alt of alts) {
+					const o = await observe({
+						...base,
+						split: { key, value: alt.value, at, setup: setupToo },
 					});
-					break;
+					if (o.ok) {
+						accepted.push({
+							read: `${at === "first" ? "read 1" : `reads 2..${reads}`}${setupToo ? " and the setup calls" : ""}`,
+							label: alt.label,
+							value: show(alt.value),
+						});
+						break;
+					}
 				}
 			}
 		}
@@ -512,7 +543,7 @@ async function splitWitnessAttack(
 			attack: "T2",
 			onChain: true,
 			failure: true,
-			detail: `the call reads it ${reads} times and still succeeds when ${accepted[0].read === "read 1" ? "the first read" : "the later reads"} return ${accepted[0].value} instead of ${show(baseValue)}: each read is a separate input. Read it once and pass the value`,
+			detail: `the call reads it ${reads} times and still succeeds when ${accepted[0].read.startsWith("read 1") ? "the first read" : "the later reads"}${accepted[0].read.endsWith("setup calls") ? " and the setup calls" : ""} return ${accepted[0].value} instead of ${show(baseValue)}: each read is a separate input. Read it once and pass the value`,
 			evidence: { reads, accepted },
 			derived: null,
 			disclosure: null,
@@ -796,13 +827,17 @@ function derivedVia(
  */
 function linkPrefix(prefix: SetupCall[], baseArgs: Value[], args: Value[]): SetupCall[] {
 	if (prefix.length === 0) return prefix;
-	return prefix.map((p) => ({
+	let changed = false;
+	const out = prefix.map((p) => ({
 		circuit: p.circuit,
 		args: p.args.map((v) => {
 			const j = baseArgs.findIndex((b) => same(b, v));
-			return j >= 0 ? args[j] : v;
+			if (j < 0 || same(args[j], v)) return v;
+			changed = true;
+			return args[j];
 		}),
 	}));
+	return changed ? out : prefix;
 }
 
 /** Values lo..hi (inclusive) from the leakage description, most of the budget at most. */

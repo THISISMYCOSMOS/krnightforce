@@ -249,5 +249,31 @@ describe("review fixes: relation source, parameterized witnesses, T2 on untestab
 		expect(input?.findings.map((f) => f.kind)).toEqual(["UNBOUND"]);
 		expect(r.summary).toMatchObject({ failures: 1, untestable: 0 });
 		expect(formatText(r)).toContain("witness:year (Uint<0..65536>): FAIL unbound [T2]");
+		// The base value 1990 had to come from the source's constants.
+		expect(r.setup.witnesses).toContain("year = 1990 (base value)");
 	}, 60_000);
+});
+
+describe("setup search: hash outputs as setup arguments, chains, base values", () => {
+	it("enrols the key a circuit derives from a secret with a helper that is not exported", async () => {
+		const r = await run("setup_hash_arg");
+		expect(r.setup.prefixes).toEqual({ act: ["enrol"] });
+		// The enrolled key follows the secret, so varying the secret still runs.
+		const act = r.units.find((u) => u.circuit === "act");
+		const secret = act?.inputs.find((i) => i.input === "witness:member_secret");
+		expect(secret?.status).toBe("tested");
+		expect(r.summary.untestable).toBe(0);
+	}, 120_000);
+
+	it("finds a constructor commitment, a three-call chain, a base argument and a base witness value", async () => {
+		const r = await run("setup_chain");
+		expect(r.setup.constructor).toBe("arg1=output #0 of reveal()");
+		expect(r.setup.prefixes.claim).toEqual(["open", "reveal", "enter"]);
+		expect(r.setup.args).toEqual({ claim: "0" });
+		expect(r.setup.witnesses).toContain("level = 500 (base value)");
+		const claim = r.units.find((u) => u.circuit === "claim");
+		expect(claim?.status).toBe("tested");
+		const level = claim?.inputs.find((i) => i.input === "witness:level");
+		expect(level?.findings.some((f) => f.attack === "T2" && f.failure)).toBe(true);
+	}, 120_000);
 });

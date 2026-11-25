@@ -1,0 +1,46 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Setup fixture: a commit-reveal and a three-step chain.
+// - The constructor stores a commitment to a draw; reveal() must be given the values
+//   behind it, so the constructor argument has to be the hash reveal() computes.
+// - claim() needs open(), then reveal(), then enter(), and its slot argument must be 0
+//   (the first entry), not the default value.
+// - claim() reads the secret level twice: once against the threshold set in the source
+//   (500) and once for the published badge. T2 must find the second read unbound.
+export ledger drawCommit: Bytes<32>;
+export ledger isOpen: Boolean;
+export ledger revealed: Boolean;
+export ledger entries: Counter;
+export ledger badges: Set<Bytes<32>>;
+
+witness level(): Uint<32>;
+
+constructor(c: Bytes<32>) {
+  drawCommit = disclose(c);
+  isOpen = false;
+  revealed = false;
+}
+
+export circuit open(): [] {
+  isOpen = true;
+}
+
+export circuit reveal(n: Uint<16>, salt: Bytes<32>): [] {
+  assert(isOpen, "not open");
+  assert(persistentHash<Vector<3, Bytes<32>>>([pad(32, "fixture:draw"), n as Field as Bytes<32>, salt]) == drawCommit, "bad reveal");
+  revealed = true;
+}
+
+export circuit enter(): [] {
+  assert(revealed, "not revealed");
+  entries.increment(1);
+}
+
+export circuit claim(slot: Uint<8>): [] {
+  assert(entries.read() > 0, "no entry");
+  assert(slot == 0, "wrong slot");
+  assert(level() >= 500, "level too low");
+  badges.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "fixture:badge"), level() as Field as Bytes<32>])));
+}
