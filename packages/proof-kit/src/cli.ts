@@ -123,8 +123,9 @@ async function benchMain(args: string[]): Promise<number> {
 		else if (a === "--out") out = args[++i];
 		else if (a === "--timeout") {
 			timeout = Number(args[++i]);
-			if (!(timeout > 0)) {
-				process.stderr.write(`--timeout needs a positive number of seconds\n${USAGE}\n`);
+			// setTimeout clamps delays above 2^31-1 ms to 1 ms, so cap at one day.
+			if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 86400) {
+				process.stderr.write(`--timeout needs a number of seconds between 0 and 86400\n${USAGE}\n`);
 				return 2;
 			}
 		} else {

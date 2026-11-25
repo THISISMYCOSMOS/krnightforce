@@ -408,6 +408,14 @@ export async function runCorpus(root: string, opts: CorpusOptions = {}): Promise
 	const limit = opts.timeoutSeconds ?? DEFAULT_CORPUS_TIMEOUT_S;
 	const rows: CorpusRow[] = [];
 	const tmp = mkdtempSync(join(tmpdir(), "proofkit-corpus-"));
+	// The temp dir holds full per-contract reports (private data): remove it on Ctrl-C too.
+	const cleanup = () => rmSync(tmp, { recursive: true, force: true });
+	const onSignal = (sig: NodeJS.Signals) => {
+		cleanup();
+		process.kill(process.pid, sig);
+	};
+	process.once("SIGINT", onSignal);
+	process.once("SIGTERM", onSignal);
 	try {
 		for (const dir of findCompiled(root)) {
 			const row: CorpusRow = {
@@ -448,7 +456,9 @@ export async function runCorpus(root: string, opts: CorpusOptions = {}): Promise
 			rows.push(row);
 		}
 	} finally {
-		rmSync(tmp, { recursive: true, force: true });
+		process.off("SIGINT", onSignal);
+		process.off("SIGTERM", onSignal);
+		cleanup();
 	}
 	const ok = rows.filter((r) => r.status === "ok");
 	const byKind: Record<string, number> = {};
