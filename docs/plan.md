@@ -150,6 +150,7 @@
   - 건강 정보 예제로 설계 → 공격까지 끝까지 확인([따라 하기](design-guide/walkthrough-health-credential.md))
 - 시나리오 8쌍(`bench/scenarios/`): health-credential, health-claim-hash, constant-salt, predicate-disclosure, vote-branch, car-club, scholarship, split-witness. car-club과 scholarship은 사용자 한 줄 입력에서 스킬이 상황을 기획해 설계한 예제입니다(2026-11-24, 따라 하기 문서 `docs/design-guide/walkthrough-car-club.md`, `walkthrough-scholarship.md`). 시험(`test/bench.test.ts`)이 정답표와 자동으로 대조합니다(CI 포함).
 - 판정 규칙과 누출 설명을 엔진에 반영했습니다. 시나리오 8쌍이 정답표대로 나오고(고친 판 실패 0), 시험 49개가 통과합니다(시각화·검토 수정 포함, 2026-11-24 기준).
+- 갈림길 비교 `proofkit compare`(2026-11-26): 두 안(`.compact` 소스는 `.proofkit-cache/compare`에 컴파일, 또는 컴파일된 폴더)을 같은 누출 설명으로 공격해, 한 줄 판정과 "무엇이 다른가" 표(지도 색이 다른 입력만), 두 지도를 냅니다. 색은 보고서에서만 가져오고 어느 안이 낫다는 판단은 하지 않습니다. 시험: car-club 구멍 판/고친 판에서 `purchase_month`(proveHeldYear)와 `plate_number`(registerCar)가 A 위험, B 위험 아님.
 - bench 러너 `proofkit bench`(2026-11-24): 시나리오 모드는 정답표 대조(시험과 같은 비교 함수)와 합계(탐지율, 고친 판 헛 실패, 시험 못 함 비율)를 내고 CI에서도 돕니다. 코퍼스 모드는 컴파일된 계약 폴더를 누출 설명 없이 재고, 화면엔 합계만, 계약별 행은 `--out`(private/)에만 씁니다.
 - 분할 witness 공격(T2, 2026-11-24): 한 호출에서 두 번 이상 읽힌 witness마다, 첫 읽기 또는 나머지 읽기에 다른 값을 주고 돌립니다. 통과하면 `UNBOUND` 실패입니다. 시나리오 `split-witness`가 정답표로 확인하고, 고치기 전 판 3쌍의 7개 읽기를 모두 잡습니다. 시험 계약 vault의 `register()`에서도 하나 찾았습니다(PIN 해시와 커밋이 서로 다른 PIN을 담을 수 있음).
 - 사용자의 첫 Midnight 앱 개발 기록에서 교훈 13개를 일반화했습니다(2026-11-24, `docs/design-guide/lessons-first-build.md`). 스킬의 정보 목록·패턴·용어·설계안 형식에 반영했습니다. 내용: 공개 대상 셋(누구나·검증자만·본인), 처리 메타데이터, 증명이 보장하지 않는 것, witness 한 번 읽기 등.

@@ -183,7 +183,8 @@ function onPath(cmd: string): boolean {
 	}
 }
 
-function compile(src: string, out: string): void {
+/** Compile a .compact source with --skip-zk into `out` unless it is already up to date. */
+export function compileContract(src: string, out: string): void {
 	const info = join(out, "compiler", "contract-info.json");
 	if (existsSync(info) && statSync(info).mtimeMs > statSync(src).mtimeMs) return;
 	mkdirSync(out, { recursive: true });
@@ -215,7 +216,7 @@ export async function runScenarios(opts: ScenarioOptions): Promise<ScenarioBench
 				if (specPath) loadSpec(specPath);
 				for (const c of answer.contracts) {
 					const out = join(resolve(opts.compiled), `${id}__${c.variant}`);
-					if (!opts.noCompile) compile(join(dir, c.path), out);
+					if (!opts.noCompile) compileContract(join(dir, c.path), out);
 					// Each version runs in its own process (as in corpus mode): a WASM trap
 					// or a runaway attack in one cannot poison the next.
 					const reportFile = join(tmp, `${id}__${c.variant}.json`);

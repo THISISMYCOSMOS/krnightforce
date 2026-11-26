@@ -106,6 +106,7 @@ compact compile --skip-zk src/my.compact managed/my
 node packages/proof-kit/dist/cli.js attack managed/my                       # 사람이 읽는 보고서
 node packages/proof-kit/dist/cli.js attack managed/my --spec privacy-spec.json --json
 node packages/proof-kit/dist/cli.js map managed/holed managed/fixed --spec privacy-spec.json --out map.md
+node packages/proof-kit/dist/cli.js compare a.compact b.compact --spec privacy-spec.json --title A안 --title B안   # 설계 갈림길: 두 안을 공격해 색이 다른 입력만 표로
 node packages/proof-kit/dist/cli.js bench                                    # 시나리오 쌍을 정답표와 대조 (COMPACTC로 컴파일)
 node packages/proof-kit/dist/cli.js bench --corpus <컴파일된 계약 폴더> --out private/corpus.json   # 실제 레포 측정: 화면엔 합계만
 ```
