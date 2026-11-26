@@ -277,3 +277,35 @@ describe("setup search: hash outputs as setup arguments, chains, base values", (
 		expect(level?.findings.some((f) => f.attack === "T2" && f.failure)).toBe(true);
 	}, 120_000);
 });
+
+describe("setup calls stay fixed while an input is varied", () => {
+	it("still finds threshold leaks when a setup argument equals the witness's base value", async () => {
+		const spec = { path: "inline", spec: { mayReveal: [] }, ranges: new Map() };
+		const r = await attack(await loadCompiled(fixture("setup_bound_threshold")), { spec });
+		for (const circuit of ["check", "checkHigh"]) {
+			const fs = findings(r, circuit, "witness:score");
+			// The leak (a comparison with the stored threshold, or score > 100) is found...
+			expect(fs.some((f) => f.kind === "PARTIAL" && f.failure)).toBe(true);
+			// ...and the stored value is never reported as the score appearing verbatim.
+			expect(fs.some((f) => f.kind === "EXPOSED")).toBe(false);
+			expect(fs.every((f) => f.evidence.setupFollowed === undefined)).toBe(true);
+		}
+	}, 120_000);
+
+	it("records when the setup calls had to follow the input (a member key)", async () => {
+		const r = await run("setup_hash_arg");
+		const fs = findings(r, "act", "witness:member_secret");
+		expect(fs.length).toBeGreaterThan(0);
+		expect(fs.every((f) => typeof f.evidence.setupFollowed === "number")).toBe(true);
+	}, 120_000);
+});
+
+describe("A2 when the base value lies past the budget", () => {
+	it("recovers a threshold base value from the source at its natural position", async () => {
+		const r = await attack(await loadCompiled(fixture("a2_threshold")), { budget: 1000 });
+		expect(r.setup.witnesses).toContain("points = 5000 (base value)");
+		const f = findings(r, "record", "witness:points").find((x) => x.attack === "A2");
+		expect(f).toMatchObject({ kind: "RECOVERABLE", failure: true });
+		expect(f?.evidence).toMatchObject({ recovered: "5000", tried: 5001, ran: 1000 });
+	}, 120_000);
+});

@@ -1,0 +1,31 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Review fixture: register(n) stores a threshold whose base value equals the score
+// witness's base value, so the setup search can bind n to score(). If the stored value
+// followed the varied score, both leaks below would vanish (score >= stored would always
+// hold). The attack must keep the setup calls fixed and still find them.
+export ledger stored: Uint<32>;
+export ledger passed: Boolean;
+export ledger high: Boolean;
+
+witness score(): Uint<32>;
+
+export circuit register(n: Uint<32>): [] {
+  stored = disclose(n);
+}
+
+// Leaks whether score >= stored.
+export circuit check(): [] {
+  assert(stored != 0, "not registered");
+  passed = disclose(score() >= stored);
+}
+
+// Leaks whether score > 100, for scores at or above the stored threshold.
+export circuit checkHigh(): [] {
+  assert(stored != 0, "not registered");
+  const s = score();
+  assert(s >= stored, "below threshold");
+  high = disclose(s > 100);
+}

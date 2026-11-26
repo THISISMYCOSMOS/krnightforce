@@ -84,6 +84,11 @@ export interface Observation {
 	 * that it was registered).
 	 */
 	targetLog: unknown[];
+	/**
+	 * Set by the attack when this run only succeeded with the setup calls moving along
+	 * with the varied input (linked arguments or ArgRefs resolved against it).
+	 */
+	followed?: boolean;
 }
 
 /**
@@ -367,6 +372,8 @@ export class Runner {
 	/** Witnesses the constructor reads; only these decide whether a deployment can be reused. */
 	private ctorWitnesses: string[] | null = null;
 	runs = 0;
+	/** Runs across every Runner (calls, constructor observations, probes): search cost. */
+	static totalRuns = 0;
 
 	constructor(
 		private readonly c: Compiled,
@@ -493,6 +500,7 @@ export class Runner {
 	/** Observe the constructor: the initial public ledger state. */
 	async observeConstructor(a: Assignment): Promise<Observation> {
 		this.runs++;
+		Runner.totalRuns++;
 		const d = await this.deploy(a);
 		if (!d.ok) return failed(`constructor: ${d.error}`, d.called, new Set());
 		const ops = opsOfState(d.state);
@@ -532,6 +540,8 @@ export class Runner {
 		target: string,
 		state: Any,
 	): Promise<Value[]> {
+		// `a` is the assignment the references are resolved against: the attacked run's
+		// own, or the base assignment when the caller pins them (see observeCall).
 		if (!args.some((x) => x instanceof ArgRef)) return args;
 		let probe: unknown[] | null = null;
 		const out: Value[] = [];
@@ -550,13 +560,18 @@ export class Runner {
 				const plog: unknown[] = [];
 				g.__proofkitHashLog = plog;
 				const wasTarget = this.target;
+				const wasCurrent = this.current;
 				this.target = false;
+				this.current = a;
+				this.runs++;
+				Runner.totalRuns++;
 				try {
 					await this.call(target, state, a.args);
 				} catch {
 					// Expected: the probe usually fails at the check the setup call satisfies.
 				} finally {
 					this.target = wasTarget;
+					this.current = wasCurrent;
 					g.__proofkitHashLog = saved;
 				}
 				probe = plog;
@@ -570,13 +585,17 @@ export class Runner {
 	/**
 	 * Deploy (or reuse a deployment), run the setup calls in `prefix`, call the circuit,
 	 * and return what its call leaves on chain. Setup calls use the same witness values.
+	 * ArgRef setup arguments are resolved against `refs` when given (the attack pins
+	 * them to the base assignment), else against `a`.
 	 */
 	async observeCall(
 		circuit: CircuitSpec,
 		a: Assignment,
 		prefix: SetupCall[] = [],
+		refs?: Assignment,
 	): Promise<Observation> {
 		this.runs++;
+		Runner.totalRuns++;
 		const d = await this.deploy(a);
 		if (!d.ok) return failed(`constructor: ${d.error}`, d.called, new Set());
 		this.current = a;
@@ -588,7 +607,7 @@ export class Runner {
 		let state = d.state;
 		for (const p of prefix) {
 			try {
-				const args = await this.resolveArgs(p.args, a, circuit.name, state);
+				const args = await this.resolveArgs(p.args, refs ?? a, circuit.name, state);
 				g.__proofkitHashLog = log;
 				const r = await this.call(p.circuit, state, args);
 				state = r.context.callContext.currentQueryContext.state;

@@ -14,14 +14,15 @@
 // limitations under the License.
 
 import { readFileSync } from "node:fs";
-import type {
-	Assignment,
-	CircuitSpec,
-	Compiled,
-	InputSpec,
-	Observation,
-	Runner,
-	SetupCall,
+import {
+	ArgRef,
+	type Assignment,
+	type CircuitSpec,
+	type Compiled,
+	type InputSpec,
+	type Observation,
+	type Runner,
+	type SetupCall,
 } from "./harness.js";
 import { chooseSetup, unitSeed } from "./setup.js";
 import { type LoadedSpec, covers } from "./spec.js";
@@ -133,6 +134,8 @@ export interface Report {
 		witnesses: string[];
 		/** Base arguments the setup search chose for a circuit, shown as values. */
 		args: Record<string, string>;
+		/** Runs the setup search made before the attack. */
+		searchRuns: number;
 	};
 	units: UnitReport[];
 	pureCircuits: string[];
@@ -282,6 +285,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 	const started = performance.now();
 	const setup = await chooseSetup(c, opts.seed, {
 		constants: sourceConstants(c.sourceFile),
+		ranges: opts.spec?.ranges,
 	});
 	const runner = setup.runner;
 	const constants = sourceConstants(c.sourceFile);
@@ -328,6 +332,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		setup: {
 			constructor: setup.constructor,
 			witnesses: [...setup.witnesses, ...setup.overrides],
+			searchRuns: setup.searchRuns,
 			args: Object.fromEntries(
 				[...setup.args].map(([k, v]) => [k, v.map((x) => show(x)).join(", ")]),
 			),
@@ -390,16 +395,28 @@ async function attackUnit(
 		if (argBase) base.args = [...argBase];
 	}
 
-	// Setup calls that passed the attacked call's base argument values get the varied
-	// values too (an id registered then looked up). Equal values can also be a
-	// coincidence (two secrets with the same default); when the linked setup call fails,
-	// run again with the setup calls as found.
-	const observe = async (a: Assignment): Promise<Observation> => {
+	// The setup calls stay as found by default: their arguments do not move with the
+	// input being varied, and ArgRefs resolve against the base assignment. Moving them
+	// could hide a leak (a stored threshold that follows the secret it is compared
+	// with). Only when that run fails, the setup calls follow: first arguments that
+	// passed the attacked call's base values (an id registered then looked up), then
+	// ArgRefs resolved against the varied assignment (a key derived from the secret).
+	// Such runs are marked `followed`; the finding's evidence counts them.
+	const hasRefs = prefix.some((p) => p.args.some((x) => x instanceof ArgRef));
+	const observe = async (a: Assignment, mode: "vary" | "fixed" = "vary"): Promise<Observation> => {
 		if (!circuit) return runner.observeConstructor(a);
+		const fixed = await runner.observeCall(circuit, a, prefix, base);
+		if (fixed.ok || mode === "fixed") return fixed;
 		const linked = linkPrefix(prefix, base.args, a.args);
-		const o = await runner.observeCall(circuit, a, linked);
-		if (o.ok || linked === prefix || !(o.error ?? "").startsWith("setup ")) return o;
-		return runner.observeCall(circuit, a, prefix);
+		if (linked !== prefix) {
+			const o = await runner.observeCall(circuit, a, linked, base);
+			if (o.ok) return { ...o, followed: true };
+		}
+		if (hasRefs) {
+			const o = await runner.observeCall(circuit, a, linked);
+			if (o.ok) return { ...o, followed: true };
+		}
+		return fixed;
 	};
 	const baseObs = await observe(base);
 	if (!baseObs.ok) {
@@ -436,26 +453,59 @@ async function attackUnit(
 	for (const h of hidden) {
 		if (h.entropy !== "secret") continue;
 		const alt = altSecret(h.leaf, leafValue(base, h), rnd);
-		maskRuns.set(h.id, await observe(withLeaf(base, h, alt)));
+		// Masking is judged with the setup calls fixed: a secret that only moves the
+		// state the setup calls build must not count as hiding another input.
+		maskRuns.set(h.id, await observe(withLeaf(base, h, alt), "fixed"));
 	}
 
 	const inputs: InputReport[] = [];
 	for (const h of hidden) {
-		inputs.push(
-			await attackLeaf(
-				h,
-				base,
-				baseObs,
-				observe,
-				maskRuns,
-				hidden,
-				constants,
-				opts,
-				rnd,
-				circuit === null,
-				name,
-			),
+		// An input that can vary with the setup calls fixed is attacked that way only: a
+		// setup call that moved with it would write the varied value to the ledger and the
+		// attacked call would read it back (a false exposure), or hide a comparison with
+		// it. Only an input that cannot vary at all with them fixed (a key the setup must
+		// register, a salary the record must hold) lets them follow.
+		let fixable = prefix.length === 0;
+		if (!fixable) {
+			const b = leafValue(base, h);
+			const all = samples(h.leaf, h.label, b, constants, prng(unitSeed(opts.seed, h.id))).filter(
+				(v) => !same(v, b),
+			);
+			// Spread over the samples (low, high, middle...): a check like `s >= stored`
+			// rejects one side only.
+			const n = all.length;
+			const tries = [...new Set([0, n - 1, n >> 1, 1, n - 2, n >> 2])]
+				.filter((i) => i >= 0 && i < n)
+				.map((i) => all[i]);
+			for (const v of tries) {
+				if ((await observe(withLeaf(base, h, v), "fixed")).ok) {
+					fixable = true;
+					break;
+				}
+			}
+		}
+		let followed = 0;
+		const counted = async (a: Assignment) => {
+			const o = await observe(a, fixable ? "fixed" : "vary");
+			if (o.followed) followed++;
+			return o;
+		};
+		const report = await attackLeaf(
+			h,
+			base,
+			baseObs,
+			counted,
+			maskRuns,
+			hidden,
+			constants,
+			opts,
+			rnd,
+			circuit === null,
+			name,
 		);
+		// Runs that needed the setup calls to move with this input: say so with the finding.
+		if (followed > 0) for (const f of report.findings) f.evidence.setupFollowed = followed;
+		inputs.push(report);
 	}
 	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd, prefix.length > 0);
 	return {
@@ -738,8 +788,14 @@ async function attackLeaf(
 				f.kind = "RECOVERABLE";
 				f.attack = f.where === "path" ? "A5" : "A2";
 				f.failure = f.onChain;
-				f.detail = `recovered the hidden value ${show(r.value)} after ${r.tried} candidates`;
-				f.evidence = { recovered: show(r.value), tried: r.tried };
+				f.detail =
+					r.ran === undefined
+						? `recovered the hidden value ${show(r.value)} after ${r.tried} candidates`
+						: `recovered the hidden value ${show(r.value)} at position ${r.tried} of the enumeration (no collision in the first ${r.ran} candidates)`;
+				f.evidence =
+					r.ran === undefined
+						? { recovered: show(r.value), tried: r.tried }
+						: { recovered: show(r.value), tried: r.tried, ran: r.ran };
 			} else {
 				f.detail =
 					h.entropy === "secret"
@@ -862,8 +918,8 @@ async function recover(
 	sampled: Value[],
 	sampledObs: { v: Value; o: Observation }[],
 	range?: [bigint, bigint],
-): Promise<Map<string, { value: Value; tried: number; exact: boolean }>> {
-	const out = new Map<string, { value: Value; tried: number; exact: boolean }>();
+): Promise<Map<string, { value: Value; tried: number; exact: boolean; ran?: number }>> {
+	const out = new Map<string, { value: Value; tried: number; exact: boolean; ran?: number }>();
 	const target = leafValue(base, h);
 	// If the samples already cover the whole domain, the observation pins the value down.
 	if (h.entropy === "enumerable") {
@@ -877,12 +933,14 @@ async function recover(
 	const want = new Map(keys.map((k) => [k, valueAt(baseObs, baseObs, k)]));
 	const numeric = h.leaf.type.kind === "uint" || h.leaf.type.kind === "field";
 	const pool = range && numeric ? rangeValues(range, budget) : candidates(h.leaf, h.label, budget);
+	let reached = false;
 	for (const cand of pool) {
 		tried++;
 		if (same(cand, target)) {
 			// Trying the true value always matches; count it only as a try, the match
 			// below would be trivially true. Keep searching for an earlier collision.
 			for (const k of keys) if (!out.has(k)) out.set(k, { value: cand, tried, exact: true });
+			reached = true;
 			break;
 		}
 		const o = await observe(withLeaf(base, h, cand));
@@ -892,6 +950,20 @@ async function recover(
 				out.set(k, { value: cand, tried, exact: false });
 		}
 		if (out.size === keys.length) break;
+	}
+	// The base value can lie past the budget (the setup search may pick a threshold from
+	// the source, e.g. 5000). The attacker's enumeration still reaches it at its natural
+	// position in the same order; the candidates before the budget showed no collision.
+	if (!reached && numeric && out.size < keys.length && typeof target === "bigint") {
+		const t = h.leaf.type;
+		const max = t.kind === "uint" ? t.max : null;
+		let pos: bigint | null = null;
+		if (range) {
+			if (target >= range[0] && target <= range[1]) pos = target - range[0] + 1n;
+		} else if (target >= 0n && (max === null || target <= max)) pos = target + 1n;
+		if (pos !== null)
+			for (const k of keys)
+				if (!out.has(k)) out.set(k, { value: target, tried: Number(pos), exact: true, ran: tried });
 	}
 	return out;
 }
