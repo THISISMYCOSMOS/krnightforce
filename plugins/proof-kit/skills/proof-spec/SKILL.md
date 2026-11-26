@@ -1,6 +1,6 @@
 ---
 name: proof:proof-spec
-description: Use when designing a Compact (Midnight) contract's privacy before or while writing it — deciding which values stay hidden, which facts may be revealed, which actions must not be linkable and who vouches for each input — or when a proof-kit attack test failed and the user needs to know which design criterion was broken and how to fix it. Produces a design proposal and the leakage description (privacy-spec.json) that attack tests check.
+description: Use when designing a Compact (Midnight) contract's privacy before or while writing it. Judges what to hide, show or share with one verifier and waits for the user's OK (gate) before circuit design; then designs, writes a compilable skeleton, compares two designs at a fork by running them (proofkit compare), and runs attack tests. Also use when an attack test failed and the user needs the broken criterion and fix. Produces a design proposal and privacy-spec.json.
 version: 0.0.2
 ---
 
@@ -33,20 +33,33 @@ Lessons from a real build (Korean): `docs/design-guide/lessons-first-build.md`.
 
 Start from an idea, or from an existing contract (then draft step 1 from its exported circuits, witnesses and ledger fields, and ask the user to confirm).
 
-**Step 1. What it does.** Restate the app in one sentence and list the circuits: who calls each, what it changes on the ledger. Ask "Is this right?"
+**Step 1. Plan.** Take the user's plan or one-line idea. Restate the app in one sentence and list the circuits: who calls each, what it changes on the ledger. If the idea is short, fill the gaps as a situation (who the people are, what they hold, who checks what), as the walkthroughs do. Ask "Is this right?"
 
-**Step 1b. Data inventory.** Before asking what to hide, list the information that usually exists in this situation — not only what the user mentioned — following `references/data-inventory.md`. For each item give what the user said (show / hide / not mentioned) and a proposal with a reason; anything the app does not need is proposed hidden or left off chain. Flag combinations of public items that can identify a person. Map every item to the Midnight mechanism that will carry it (`references/midnight-terms.md`), explaining each term precisely the first time. Ask the user to confirm or change the table; their answer is the start of step 2.
+**Step 2. Hide judgement.** Before asking what to hide, give the data inventory: list the information that usually exists in this situation, not only what the user mentioned, following `references/data-inventory.md`. Give a proposal for every item, with a reason: **hide**, **show to everyone**, **show to one verifier only** (`shareWith`), or **leave off chain**. Anything the app does not need is proposed hidden or left off chain. Flag combinations of public items that can identify a person. Map each item to the Midnight mechanism that carries it (`references/midnight-terms.md`), explaining each term precisely the first time. Say what the proof will not guarantee (pitfall 9).
+- **GATE.** Ask "Is this right?" and do NOT start circuit design until the user agrees. If the user changes an item, update the table and ask again.
 
-**Step 2. Four questions, one at a time, each with an example from their app:**
-1. Which values must stay hidden?
-2. What may be revealed — values or facts — and why?
-3. Which actions must not be linkable?
-4. Who vouches for each value the user supplies?
+**Step 3. Design.**
+- Ask the four questions that are still open, one at a time, each with an example from their app: which values must stay hidden; what may be revealed, values or facts, and why; which actions must not be linkable; who vouches for each value the user supplies. Answers already settled in step 2 are not asked again.
+- Give the design proposal in the five parts of `references/design-output.md`: what goes where; what each circuit reveals; building block per value with its pitfall; works / does not work; how it will be checked.
+- Ask the user to agree to part 2. Then write `privacy-spec.json` next to the contract in the format of `references/privacy-spec.md`.
+- At a design fork, use the fork comparison below.
 
-**Step 3. Design proposal** in the five parts of `references/design-output.md`: what goes where; what each circuit reveals; building block per value with its pitfall; works / does not work; how it will be checked.
+**Step 4. Skeleton.** Write a compilable Compact skeleton from the agreed design: ledger fields, witnesses, circuits and the hiding building blocks, following the rules in `references/skeleton.md`. Compile it with `compact compile --skip-zk`. A compile error is fixed before going on.
 
-**Step 4. Agreement.** Ask the user to agree to part 2. Then write `privacy-spec.json` next to the contract in the format of `references/privacy-spec.md`.
+**Step 5. Attack and map.** Run `/proof:attack` (engine: `proofkit attack <dir> --spec privacy-spec.json`), then `/proof:map`. For each failure, name the criterion from its `criteria` field and the matching pattern from `references/patterns.md` (pitfall first, then the fix), fix it, and rerun until the tests pass.
 
-**Step 5. Check and fix.** After the contract is written, run `/proof:attack`. For each failure, name the criterion from its `criteria` field, give the matching pattern from `references/patterns.md` (pitfall first, then the fix), and rerun until the tests pass. Then run `/proof:map` to draw the result.
+## Fork comparison
 
-Worked examples of all five steps: `docs/design-guide/walkthrough-health-credential.md`; from a one-line request, with step 1 planning the situation: `docs/design-guide/walkthrough-car-club.md`, `docs/design-guide/walkthrough-scholarship.md`.
+Used during steps 3 and 4. A fork is a point where two reasonable designs reveal different things or change who vouches. Examples: `blockTimeGte` on a purchase date versus comparing with a public calendar; hashing a plate number versus mixing in an operator secret.
+
+1. Write both options as small compilable variants (`A.compact`, `B.compact`).
+2. Run:
+   ```
+   proofkit compare A.compact B.compact --spec privacy-spec.json --title "<option A>" --title "<option B>"
+   ```
+3. Show the user the "what differs" table and the two maps.
+4. Let the user choose. Recommend one, with a reason.
+
+Only ask about forks that change what is revealed or who vouches. Do not ask about choices that change neither. The verdicts come from the engine run, never from your reading of the code.
+
+Worked examples of the flow: `docs/design-guide/walkthrough-health-credential.md`; from a one-line request, with step 1 planning the situation: `docs/design-guide/walkthrough-car-club.md`, `docs/design-guide/walkthrough-scholarship.md`.
