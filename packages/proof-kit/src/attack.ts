@@ -23,6 +23,7 @@ import {
 	type Observation,
 	type Runner,
 	type SetupCall,
+	normalize,
 } from "./harness.js";
 import { chooseSetup, unitSeed } from "./setup.js";
 import { type LoadedSpec, covers } from "./spec.js";
@@ -197,9 +198,20 @@ export interface AttackOptions {
 	circuits?: string[];
 	/** Leakage description. Without it, direct disclosures count as declared. */
 	spec?: LoadedSpec | null;
+	/**
+	 * Hard cap on runs per unit (setup calls, probes and retries included). Default:
+	 * budget + 2000. Runs past it never happen and are reported as "run cap reached".
+	 */
+	runCap?: number;
 }
 
-type Opts = { budget: number; seed: number; circuits: string[]; spec: LoadedSpec | null };
+type Opts = {
+	budget: number;
+	seed: number;
+	circuits: string[];
+	spec: LoadedSpec | null;
+	runCap: number;
+};
 
 export const VERSION = "0.0.1";
 const CTOR = "<constructor>";
@@ -281,6 +293,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		seed: options.seed ?? 1,
 		circuits: options.circuits ?? [],
 		spec: options.spec ?? null,
+		runCap: options.runCap ?? (options.budget ?? 12000) + 2000,
 	};
 	const started = performance.now();
 	const setup = await chooseSetup(c, opts.seed, {
@@ -406,12 +419,13 @@ async function attackUnit(
 	// Modes: "fixed" keeps the setup calls as found; "follow" lets them move with the
 	// input in one run (an input that cannot vary otherwise); "vary" tries fixed first.
 	// Every run (setup calls, probes, retries) counts against a hard cap per unit.
-	const cap = runs0 + opts.budget + 2000;
+	const capRuns = opts.runCap;
+	const cap = runs0 + capRuns;
 	const observe = async (
 		a: Assignment,
 		mode: "vary" | "fixed" | "follow" = "vary",
 	): Promise<Observation> => {
-		if (runner.runs >= cap) return capped();
+		if (runner.runs >= cap) return capped(capRuns);
 		if (!circuit) return runner.observeConstructor(a);
 		const linked = linkPrefix(prefix, base.args, a.args);
 		const follow = async () => {
@@ -474,6 +488,7 @@ async function attackUnit(
 		// it. Only an input that cannot vary at all with them fixed (a key the setup must
 		// register, a salary the record must hold) lets them follow.
 		let fixable = prefix.length === 0;
+		const passed: Value[] = [];
 		if (!fixable) {
 			const b = leafValue(base, h);
 			const all = samples(h.leaf, h.label, b, constants, prng(unitSeed(opts.seed, h.id))).filter(
@@ -482,13 +497,43 @@ async function attackUnit(
 			// Spread over the samples (low, high, middle...): a check like `s >= stored`
 			// rejects one side only.
 			const n = all.length;
-			const tries = [...new Set([0, n - 1, n >> 1, 1, n - 2, n >> 2])]
+			const spread = [...new Set([0, n - 1, n >> 1, 1, n - 2, n >> 2])]
 				.filter((i) => i >= 0 && i < n)
 				.map((i) => all[i]);
-			for (const v of tries) {
+			// Plus the source constants +-1 and the spec range bounds: a narrow window around
+			// a stored threshold (`s >= stored && s <= stored + 10`) is reached through them.
+			const t = h.leaf.type;
+			const edges: Value[] = [];
+			if (t.kind === "uint" || t.kind === "field") {
+				const max = t.kind === "uint" ? t.max : null;
+				const range = opts.spec?.ranges.get(h.id);
+				// Values next to the base too: a stored value equal to the base opens a window
+				// just above or below it.
+				// The source constants also act as offsets from such a stored value
+				// (`s <= stored + 10`, `s > stored + 5`).
+				const near =
+					typeof b === "bigint"
+						? [
+								b - 2n,
+								b - 1n,
+								b + 1n,
+								b + 2n,
+								...constants.flatMap((k) => [b + k - 1n, b + k, b + k + 1n, b - k]),
+							]
+						: [];
+				const raw = [...near, ...constants.flatMap((k) => [k - 1n, k, k + 1n]), ...(range ?? [])];
+				for (const v of raw) if (v >= 0n && (max === null || v <= max)) edges.push(v);
+			}
+			const tries: Value[] = [];
+			for (const v of [...spread, ...edges])
+				if (!same(v, b) && !tries.some((x) => same(x, v))) tries.push(v);
+			// Values that ran with the setup fixed also join A1's samples: a narrow window
+			// may hold none of the generic samples.
+			for (const v of tries.slice(0, 40)) {
 				if ((await observe(withLeaf(base, h, v), "fixed")).ok) {
 					fixable = true;
-					break;
+					passed.push(v);
+					if (passed.length >= 10) break;
 				}
 			}
 		}
@@ -498,6 +543,33 @@ async function attackUnit(
 			if (o.followed) followed++;
 			return o;
 		};
+		// In follow mode the setup calls write values that move with this input (a linked
+		// argument, or a reference computed from this witness). A difference that is exactly
+		// such a value is the setup call's write read back, not a leak of the attacked call.
+		const setupWritten = fixable
+			? undefined
+			: (a: Assignment): Value[] => {
+					const out: Value[] = [];
+					const linked = linkPrefix(prefix, base.args, a.args);
+					prefix.forEach((p, i) => {
+						p.args.forEach((x, j) => {
+							if (x instanceof ArgRef) {
+								if (
+									"witness" in x.from &&
+									h.spec.source === "witness" &&
+									x.from.witness === h.spec.name
+								) {
+									try {
+										out.push(x.from.fn(a.witnesses[h.spec.name]));
+									} catch {
+										// a reference that cannot be computed for this value writes nothing
+									}
+								}
+							} else if (linked[i].args[j] !== x) out.push(linked[i].args[j]);
+						});
+					});
+					return out;
+				};
 		const report = await attackLeaf(
 			h,
 			base,
@@ -510,11 +582,18 @@ async function attackUnit(
 			rnd,
 			circuit === null,
 			name,
+			setupWritten,
+			passed,
 		);
 		// Runs that needed the setup calls to move with this input: say so with the finding.
 		// The setup calls then put values derived from the input on chain themselves, and
 		// a read of them back shows up in this call too; the reader should know.
 		if (followed > 0) for (const f of report.findings) f.evidence.setupFollowed = followed;
+		if (!fixable) {
+			const note =
+				"tested with setup calls following this input; leaks through the setup-written value cannot be seen";
+			report.reason = report.reason ? `${report.reason}; ${note}` : note;
+		}
 		inputs.push(report);
 	}
 	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd, prefix.length > 0);
@@ -633,10 +712,11 @@ async function splitWitnessAttack(
 }
 
 /** The observation for a run the per-unit run cap did not allow. */
-function capped(): Observation {
+function capped(limit: number): Observation {
 	return {
 		ok: false,
-		error: "run cap for this unit reached",
+		capped: true,
+		error: `run cap reached (${limit} runs)`,
 		ops: [],
 		shape: "",
 		result: null,
@@ -664,6 +744,8 @@ async function attackLeaf(
 	rnd: () => number,
 	isConstructor: boolean,
 	unit: string,
+	setupWritten?: (a: Assignment) => Value[],
+	extraSamples: Value[] = [],
 ): Promise<InputReport> {
 	const report: InputReport = {
 		input: h.id,
@@ -682,15 +764,26 @@ async function attackLeaf(
 	// A1: vary only this leaf.
 	const baseValue = leafValue(base, h);
 	const values = samples(h.leaf, h.label, baseValue, constants, rnd);
+	for (const v of extraSamples) if (!values.some((x) => same(x, v))) values.push(v);
 	const obs: { v: Value; o: Observation }[] = [{ v: baseValue, o: baseObs }];
+	// Runs the per-unit cap refused never happened: they are counted apart from runs the
+	// contract rejected, and a verdict cannot rest on a sample set they cut short.
+	let capDrops = 0;
+	let capReason = "run cap reached";
 	for (const v of values.slice(1)) {
 		const o = await observe(withLeaf(base, h, v));
-		if (o.ok) obs.push({ v, o });
+		if (o.capped) {
+			capDrops++;
+			capReason = o.error ?? capReason;
+		} else if (o.ok) obs.push({ v, o });
 	}
 	report.samples = obs.length;
 	if (obs.length < 2) {
 		report.status = "untestable";
-		report.reason = "every varied run failed (the contract rejects other values; needs a scenario)";
+		report.reason =
+			capDrops > 0
+				? capReason
+				: "every varied run failed (the contract rejects other values; needs a scenario)";
 		return report;
 	}
 
@@ -726,6 +819,8 @@ async function attackLeaf(
 			})
 			.map((m) => m.id);
 		const derived = derivedVia(baseObs, pool, key);
+		const wrote =
+			setupWritten !== undefined && writtenBySetup(baseObs, base, h, pool, key, setupWritten);
 		const mk = (kind: Kind, detail: string, evidence: Record<string, unknown>): Finding => ({
 			kind,
 			where,
@@ -734,7 +829,7 @@ async function attackLeaf(
 			onChain,
 			failure: onChain && FAILURE_KINDS.includes(kind),
 			detail,
-			evidence,
+			evidence: wrote ? { ...evidence, setupWrote: true } : evidence,
 			derived,
 			disclosure: null,
 			criteria: [],
@@ -790,7 +885,12 @@ async function attackLeaf(
 
 	// A2: try candidates once for all places that still look one-to-one.
 	if (needRecovery.length > 0) {
-		const recovered = await recover(
+		const {
+			out: recovered,
+			capHit,
+			beyond,
+			tried,
+		} = await recover(
 			h,
 			base,
 			baseObs,
@@ -801,6 +901,10 @@ async function attackLeaf(
 			obs,
 			opts.spec?.ranges.get(h.id),
 		);
+		if (capHit) {
+			capDrops++;
+			capReason = `run cap reached during recovery after ${tried} candidates`;
+		}
 		for (const f of report.findings) {
 			const key = f.location.startsWith("cell ") ? `op ${f.location.slice(5)}` : f.location;
 			if (f.kind !== "TAG" || !needRecovery.includes(key)) continue;
@@ -814,28 +918,87 @@ async function attackLeaf(
 				f.kind = "RECOVERABLE";
 				f.attack = f.where === "path" ? "A5" : "A2";
 				f.failure = f.onChain;
-				f.detail =
-					r.ran === undefined
-						? `recovered the hidden value ${show(r.value)} after ${r.tried} candidates`
-						: `recovered the hidden value ${show(r.value)} at position ${r.tried} of the enumeration (no collision in the first ${r.ran} candidates)`;
-				f.evidence =
-					r.ran === undefined
-						? { recovered: show(r.value), tried: r.tried }
-						: { recovered: show(r.value), tried: r.tried, ran: r.ran };
+				f.detail = `recovered the hidden value ${show(r.value)} after ${r.tried} candidates`;
+				f.evidence = { ...f.evidence, recovered: show(r.value), tried: r.tried };
 			} else {
 				f.detail =
 					h.entropy === "secret"
 						? "one-to-one function of a high-entropy value: not recoverable, but identical whenever the value is reused (A3)"
-						: `not recovered within ${opts.budget} candidates`;
-				f.evidence = { tried: opts.budget };
+						: capHit
+							? `not recovered: run cap reached after ${tried} candidates`
+							: beyond
+								? `not recovered within ${opts.budget} candidates (the value lies beyond them)`
+								: `not recovered within ${opts.budget} candidates`;
+				f.evidence = { ...f.evidence, tried: capHit ? tried : opts.budget };
 			}
 		}
 	}
 	for (const f of report.findings) {
 		decide(f, h.id, unit, opts.spec);
+		if (f.evidence.setupWrote) {
+			// The difference is the value a following setup call wrote, read back.
+			f.failure = false;
+			f.disclosure = null;
+			f.detail = `the setup call wrote this value (${f.detail})`;
+		}
 		f.criteria = criteriaFor(f);
 	}
+	if (capDrops > 0) {
+		if (report.findings.some((f) => f.failure)) {
+			for (const f of report.findings) f.evidence.capped = capDrops;
+		} else {
+			// Not every planned run happened: no failure here is not a pass.
+			report.status = "untestable";
+			report.reason = capReason;
+		}
+	}
 	return report;
+}
+
+/**
+ * Whether, in follow mode, every value that differs at `key` from the base run is one
+ * the following setup calls wrote for that run (an argument linked to the input, or a
+ * reference computed from it).
+ */
+function writtenBySetup(
+	baseObs: Observation,
+	base: Assignment,
+	h: HiddenLeaf,
+	pool: { v: Value; o: Observation }[],
+	key: string,
+	setupWritten: (a: Assignment) => Value[],
+): boolean {
+	if (key === "shape" || key === "result") return false;
+	// The transcript holds values in their ledger encoding; a value written by the setup
+	// call is compared both in that encoding (for this input's type) and normalized.
+	const written = (a: Assignment) => {
+		const out: string[] = [];
+		for (const w of setupWritten(a)) {
+			leafStrings(normalize(w), out);
+			try {
+				const enc = transcriptEncoding(h.leaf, w);
+				if (enc !== null) out.push(enc);
+			} catch {
+				// a value of another type has no encoding as this input
+			}
+		}
+		return out;
+	};
+	const inW = (ws: string[], s: string) =>
+		ws.some((y) => y === s || `${y}n` === s || y === `${s}n`);
+	const baseLeaves = leafStrings(observedAt(baseObs, key));
+	const baseWritten = written(base);
+	let differs = false;
+	for (const x of pool) {
+		const xl = leafStrings(observedAt(x.o, key));
+		const fromBase = baseLeaves.filter((s) => !xl.includes(s));
+		const fromX = xl.filter((s) => !baseLeaves.includes(s));
+		if (fromBase.length + fromX.length === 0) continue;
+		differs = true;
+		const w = written(withLeaf(base, h, x.v));
+		if (!fromX.every((s) => inW(w, s)) || !fromBase.every((s) => inW(baseWritten, s))) return false;
+	}
+	return differs;
 }
 
 /**
@@ -944,15 +1107,20 @@ async function recover(
 	sampled: Value[],
 	sampledObs: { v: Value; o: Observation }[],
 	range?: [bigint, bigint],
-): Promise<Map<string, { value: Value; tried: number; exact: boolean; ran?: number }>> {
-	const out = new Map<string, { value: Value; tried: number; exact: boolean; ran?: number }>();
+): Promise<{
+	out: Map<string, { value: Value; tried: number; exact: boolean }>;
+	capHit: boolean;
+	beyond: boolean;
+	tried: number;
+}> {
+	const out = new Map<string, { value: Value; tried: number; exact: boolean }>();
 	const target = leafValue(base, h);
 	// If the samples already cover the whole domain, the observation pins the value down.
 	if (h.entropy === "enumerable") {
 		const domain = [...candidates(h.leaf, h.label, budget)];
 		if (domain.every((d) => sampled.some((s) => same(s, d)))) {
 			for (const k of keys) out.set(k, { value: target, tried: sampledObs.length, exact: true });
-			return out;
+			return { out, capHit: false, beyond: false, tried: sampledObs.length };
 		}
 	}
 	let tried = 0;
@@ -960,6 +1128,7 @@ async function recover(
 	const numeric = h.leaf.type.kind === "uint" || h.leaf.type.kind === "field";
 	const pool = range && numeric ? rangeValues(range, budget) : candidates(h.leaf, h.label, budget);
 	let reached = false;
+	let capHit = false;
 	for (const cand of pool) {
 		tried++;
 		if (same(cand, target)) {
@@ -970,6 +1139,12 @@ async function recover(
 			break;
 		}
 		const o = await observe(withLeaf(base, h, cand));
+		if (o.capped) {
+			// The cap refused this and every later candidate: they were not tried.
+			capHit = true;
+			tried--;
+			break;
+		}
 		if (!o.ok) continue;
 		for (const k of keys) {
 			if (!out.has(k) && valueAt(o, baseObs, k) === want.get(k))
@@ -977,19 +1152,9 @@ async function recover(
 		}
 		if (out.size === keys.length) break;
 	}
-	// The base value can lie past the budget (the setup search may pick a threshold from
-	// the source, e.g. 5000). The attacker's enumeration still reaches it at its natural
-	// position in the same order; the candidates before the budget showed no collision.
-	if (!reached && numeric && out.size < keys.length && typeof target === "bigint") {
-		const t = h.leaf.type;
-		const max = t.kind === "uint" ? t.max : null;
-		let pos: bigint | null = null;
-		if (range) {
-			if (target >= range[0] && target <= range[1]) pos = target - range[0] + 1n;
-		} else if (target >= 0n && (max === null || target <= max)) pos = target + 1n;
-		if (pos !== null)
-			for (const k of keys)
-				if (!out.has(k)) out.set(k, { value: target, tried: Number(pos), exact: true, ran: tried });
-	}
-	return out;
+	// The base value can lie past the enumerated candidates (the setup search may pick a
+	// threshold from the source, e.g. 5000). Candidates that did not run say nothing about
+	// it: the verdict is "not recovered", with the reason.
+	const beyond = !reached && !capHit && out.size < keys.length;
+	return { out, capHit, beyond, tried };
 }
