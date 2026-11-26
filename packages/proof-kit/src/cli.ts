@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { type Report, attack } from "./attack.js";
 import { corpusMarkdown, runCorpus, runScenarios, scenarioMarkdown } from "./bench.js";
+import { compareJson, compareMarkdown, runCompare } from "./compare.js";
 import { formatText } from "./format.js";
 import { loadCompiled } from "./harness.js";
 import { renderMapMarkdown } from "./map.js";
@@ -29,6 +30,9 @@ const USAGE = `usage: proofkit attack <compiled-dir> [--source <file.compact>] [
        proofkit map <report.json | compiled-dir> [<report.json | compiled-dir>]
                     [--title <a> [--title <b>]] [--heading <h>] [--spec <file> | --no-spec] [--out <file.md>]
 
+       proofkit compare <A.compact | A-compiled-dir> <B.compact | B-compiled-dir> [--spec <file>]
+                        [--title <a> --title <b>] [--out <file.md>] [--json]
+
        proofkit bench [--scenarios <dir>] [--compiled <dir>] [--no-compile] [--json] [--out <file>]
        proofkit bench --corpus <dir> [--timeout <seconds>] [--json] [--out <private-file>]
 
@@ -39,6 +43,8 @@ Without --spec, privacy-spec.json next to the contract source is used if present
 only (each contract runs in its own process, 180 s limit unless --timeout); per-contract rows (which may name third-party repos) go to --out, meant for private/.
 \`map\` draws the privacy map (Mermaid in Markdown) from attack reports; give two to put a
 holed and a fixed version side by side. A compiled-dir is attacked first.
+\`compare\` attacks two options at one design decision with the same spec and lists every input
+whose map color differs (exit 0 when it ran, 2 on usage or compile error; failures do not change it).
 <compiled-dir> is the output directory given to \`compact compile\` (it holds contract/ and compiler/).
 Exit code: 0 no failures, 1 failures found, 2 usage or load error.`;
 
@@ -46,6 +52,7 @@ async function main(argv: string[]): Promise<number> {
 	const [cmd, dir, ...rest] = argv;
 	if (cmd === "map" && dir) return mapMain([dir, ...rest]);
 	if (cmd === "bench") return benchMain(argv.slice(1));
+	if (cmd === "compare") return compareMain(argv.slice(1));
 	if (cmd !== "attack" || !dir) {
 		process.stderr.write(`${USAGE}\n`);
 		return 2;
@@ -200,6 +207,46 @@ async function mapMain(args: string[]): Promise<number> {
 	const md = renderMapMarkdown(maps, heading);
 	if (out) writeFileSync(out, md);
 	else process.stdout.write(md);
+	return 0;
+}
+
+async function compareMain(args: string[]): Promise<number> {
+	const sources: string[] = [];
+	const titles: string[] = [];
+	let specPath: string | undefined;
+	let out: string | undefined;
+	let json = false;
+	const withValue = ["--spec", "--title", "--out"];
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (withValue.includes(a) && (args[i + 1] === undefined || args[i + 1].startsWith("--"))) {
+			process.stderr.write(`${a} needs a value\n${USAGE}\n`);
+			return 2;
+		}
+		if (a === "--spec") specPath = args[++i];
+		else if (a === "--title") titles.push(args[++i]);
+		else if (a === "--out") out = args[++i];
+		else if (a === "--json") json = true;
+		else if (a.startsWith("--")) {
+			process.stderr.write(`unknown option ${a}\n${USAGE}\n`);
+			return 2;
+		} else sources.push(a);
+	}
+	if (sources.length !== 2) {
+		process.stderr.write(`compare needs two contracts\n${USAGE}\n`);
+		return 2;
+	}
+	let result: Awaited<ReturnType<typeof runCompare>>;
+	try {
+		result = await runCompare([sources[0], sources[1]], { spec: specPath ?? null, titles });
+	} catch (e) {
+		const msg = String((e as Error).message ?? e).split("\n")[0];
+		process.stderr.write(`cannot compile, load or attack: ${msg}\n`);
+		return 2;
+	}
+	const text = json ? `${JSON.stringify(compareJson(result), null, 2)}\n` : compareMarkdown(result);
+	if (out) writeFileSync(out, text);
+	else process.stdout.write(text);
 	return 0;
 }
 

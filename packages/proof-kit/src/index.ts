@@ -54,3 +54,11 @@ export {
 export type { MapClass, MapRow } from "./map.js";
 export { covers, findSpec, loadSpec } from "./spec.js";
 export type { LoadedSpec, PrivacySpec } from "./spec.js";
+export {
+	compareJson,
+	compareMarkdown,
+	diffReports,
+	resolveCompiled,
+	runCompare,
+} from "./compare.js";
+export type { CompareOptions, CompareResult, CompareRow } from "./compare.js";
