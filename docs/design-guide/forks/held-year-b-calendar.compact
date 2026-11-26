@@ -1,0 +1,104 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Fork example, option B (public club calendar). Car club membership card, built from docs/design-guide/walkthrough-car-club.md.
+// Shown: the car model, and the fact "held for 12 months or more".
+// Hidden: plate number, purchase month, owner.
+// Vouched for by: the club operator fixed at deployment.
+export ledger operator_commit: Bytes<32>;
+export ledger cars: Map<Bytes<32>, Bytes<32>>;
+export ledger plate_tags: Set<Bytes<32>>;
+export ledger current_month: Uint<16>;
+export ledger shown_model: Map<Bytes<32>, Uint<16>>;
+export ledger veterans: Set<Bytes<32>>;
+
+witness operator_secret(): Bytes<32>;
+witness car_model(): Uint<16>;
+witness purchase_month(): Uint<16>;
+witness plate_number(): Uint<32>;
+// The member's key, given to the operator off chain at registration.
+witness owner_key(): Bytes<32>;
+// The member's secret; owner_key = owner_key_of(owner_secret).
+witness owner_secret(): Bytes<32>;
+witness car_nonce(): Bytes<32>;
+
+export pure circuit operator_commitment(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "carclub:operator:v1"), secret]);
+}
+
+export pure circuit owner_key_of(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "carclub:owner:v1"), secret]);
+}
+
+// Criterion 4, 5: a commitment with a fresh nonce per car record. The owner's
+// name is never on chain: the operator checks it off chain. The record holds the
+// member's key, so only the member can prove it (criterion 11).
+// Helpers take values, not witness calls: each witness is read once per exported
+// circuit (probe p29), so the value checked against the record is the value used.
+circuit record(model: Uint<16>, month: Uint<16>, plate: Uint<32>, owner: Bytes<32>,
+               nonce: Bytes<32>): Bytes<32> {
+  return persistentCommit<Vector<4, Bytes<32>>>([
+    model as Field as Bytes<32>,
+    month as Field as Bytes<32>,
+    plate as Field as Bytes<32>,
+    owner
+  ], nonce);
+}
+
+circuit check_operator(secret: Bytes<32>): [] {
+  assert(operator_commitment(secret) == operator_commit, "not the operator");
+}
+
+// Criterion 4: the duplicate check mixes in the operator's secret, so the tag
+// cannot be recomputed from a guessed plate number.
+circuit plate_tag(operator: Bytes<32>, plate: Uint<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "carclub:plate:v1"),
+    operator,
+    plate as Field as Bytes<32>
+  ]);
+}
+
+constructor(operator: Bytes<32>) {
+  operator_commit = disclose(operator);
+}
+
+// The operator checks the registration papers off chain, then records the car.
+export circuit registerCar(id: Bytes<32>): [] {
+  const operator = operator_secret();
+  check_operator(operator);
+  const plate = plate_number();
+  const tag = plate_tag(operator, plate);
+  assert(!plate_tags.member(disclose(tag)), "car already registered");
+  plate_tags.insert(disclose(tag));
+  cars.insert(disclose(id), disclose(record(car_model(), purchase_month(), plate, owner_key(), car_nonce())));
+}
+
+// The operator moves the club calendar forward (public, months since 2000-01).
+export circuit setMonth(m: Uint<16>): [] {
+  check_operator(operator_secret());
+  current_month = disclose(m);
+}
+
+// The member proves the record is theirs with the secret behind the stored key.
+circuit owns(id: Bytes<32>, model: Uint<16>, month: Uint<16>): [] {
+  assert(cars.member(disclose(id)), "unknown card");
+  const mine = record(model, month, plate_number(), owner_key_of(owner_secret()), car_nonce());
+  assert(cars.lookup(disclose(id)) == mine, "not your car");
+}
+
+// Criterion 6: the model is revealed on purpose.
+export circuit showCar(id: Bytes<32>): [] {
+  const model = car_model();
+  owns(id, model, purchase_month());
+  shown_model.insert(disclose(id), disclose(model));
+}
+
+// Criterion 6: only "held for 12 months or more", against the public club month.
+export circuit proveHeldYear(id: Bytes<32>): [] {
+  const month = purchase_month();
+  owns(id, car_model(), month);
+  assert(disclose(month + 12 <= current_month), "held less than a year");
+  veterans.insert(disclose(id));
+}

@@ -175,3 +175,25 @@ setup: proveHeldYear runs after registerCar, setMonth
   - `packages/proof-kit/scripts/count-witness-reads.mts`로 모든 회로가 witness를 한 번씩만 읽는 것을 확인했습니다.
 - **출처**: 실제 구축 기록에서 찾은 교훈입니다(`lessons-first-build.md` 6번).
 
+## 갈림길 비교 (새 흐름, 실제 실행 결과)
+
+"1년 이상 보유"를 어떻게 확인할지는 무엇이 새는지를 바꾸는 갈림길입니다. 그래서 스킬은 두 안을 실제로 컴파일하고 공격해 나란히 보여 줍니다. 판정은 엔진 실행 결과에서만 나옵니다.
+
+- A안: 구매 시각을 블록 시각과 비교(`blockTimeGte`) → [`forks/held-year-a-blocktime.compact`](forks/held-year-a-blocktime.compact)
+- B안: 운영자가 올리는 공개 동호회 달과 비교 → [`forks/held-year-b-calendar.compact`](forks/held-year-b-calendar.compact)
+
+```
+proofkit compare forks/held-year-a-blocktime.compact forks/held-year-b-calendar.compact \
+  --spec ../../bench/scenarios/car-club/privacy-spec.json --title "A: 블록 시각과 비교" --title "B: 공개 동호회 달과 비교"
+```
+
+| 회로 | 입력 | A: 블록 시각과 비교 | B: 공개 동호회 달과 비교 |
+| --- | --- | --- | --- |
+| proveHeldYear | witness:purchase_month | 위험 (A2 recoverable) | 증명만 (A1 masked) |
+
+두 안의 차이는 이 한 줄뿐입니다.
+- A안: 컴파일러가 `disclose()`를 요구하는 자리를 그대로 감싸면 구매월이 체인에서 복원됩니다.
+- B안: 구매월이 커밋에 가려집니다.
+- 스킬의 추천: B안. 이유는 "1년 이상"이라는 사실만 드러나기 때문입니다. 공개 달력을 운영자가 갱신한다는 조건은 받아들여야 합니다.
+
+두 안의 그림까지 포함한 전체 출력은 [`forks/held-year.md`](forks/held-year.md)에 있습니다.
