@@ -27,8 +27,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { type Report, attack } from "./attack.js";
-import { loadCompiled } from "./harness.js";
+import type { Report } from "./attack.js";
 import { loadSpec } from "./spec.js";
 
 /**
@@ -135,6 +134,8 @@ export function checkAgainstAnswer(report: Report, c: AnswerContract): ContractC
 export interface ScenarioResult {
 	id: string;
 	contracts: ContractCheck[];
+	/** Wall time per version, in milliseconds (child process included), by variant. */
+	ms?: Record<string, number>;
 	/** Set when a version could not be compiled or loaded. */
 	error?: string;
 }
@@ -167,6 +168,8 @@ export interface ScenarioOptions {
 	 * there with $COMPACTC, `compactc` on PATH, or `compact compile`.
 	 */
 	compiled: string;
+	/** Seconds each version may run before it counts as an error (default 180). */
+	timeoutSeconds?: number;
 	/** Never compile; report a missing compiled version as an error. */
 	noCompile?: boolean;
 }
@@ -198,25 +201,50 @@ export async function runScenarios(opts: ScenarioOptions): Promise<ScenarioBench
 		.filter((d) => d.isDirectory() && existsSync(join(root, d.name, "answer.json")))
 		.map((d) => d.name)
 		.sort();
+	const limit = opts.timeoutSeconds ?? DEFAULT_CORPUS_TIMEOUT_S;
 	const scenarios: ScenarioResult[] = [];
-	for (const id of ids) {
-		const dir = join(root, id);
-		const answer = JSON.parse(readFileSync(join(dir, "answer.json"), "utf8")) as Answer;
-		const result: ScenarioResult = { id, contracts: [] };
-		try {
-			const spec = answer.spec ? loadSpec(join(dir, answer.spec)) : null;
-			for (const c of answer.contracts) {
-				const out = join(resolve(opts.compiled), `${id}__${c.variant}`);
-				if (!opts.noCompile) compile(join(dir, c.path), out);
-				const report = await attack(await loadCompiled(out), { spec });
-				result.contracts.push(checkAgainstAnswer(report, c));
+	const tmp = mkdtempSync(join(tmpdir(), "proofkit-scenarios-"));
+	try {
+		for (const id of ids) {
+			const dir = join(root, id);
+			const answer = JSON.parse(readFileSync(join(dir, "answer.json"), "utf8")) as Answer;
+			const result: ScenarioResult = { id, contracts: [], ms: {} };
+			try {
+				// Validate the spec here, so a broken one is reported once, not per child.
+				const specPath = answer.spec ? join(dir, answer.spec) : null;
+				if (specPath) loadSpec(specPath);
+				for (const c of answer.contracts) {
+					const out = join(resolve(opts.compiled), `${id}__${c.variant}`);
+					if (!opts.noCompile) compile(join(dir, c.path), out);
+					// Each version runs in its own process (as in corpus mode): a WASM trap
+					// or a runaway attack in one cannot poison the next.
+					const reportFile = join(tmp, `${id}__${c.variant}.json`);
+					const t0 = performance.now();
+					const res = await runChild(
+						out,
+						reportFile,
+						limit * 1000,
+						specPath ? ["--spec", specPath] : ["--no-spec"],
+					);
+					(result.ms as Record<string, number>)[c.variant] = Math.round(performance.now() - t0);
+					if (res.timedOut) throw new Error(`${c.variant}: timed out after ${limit}s`);
+					let report: Report;
+					try {
+						report = JSON.parse(readFileSync(reportFile, "utf8")) as Report;
+					} catch {
+						throw new Error(`${c.variant}: ${res.firstError || "no report"}`);
+					}
+					result.contracts.push(checkAgainstAnswer(report, c));
+				}
+			} catch (e) {
+				result.error = String((e as Error).message ?? e)
+					.split("\n")[0]
+					.slice(0, 200);
 			}
-		} catch (e) {
-			result.error = String((e as Error).message ?? e)
-				.split("\n")[0]
-				.slice(0, 200);
+			scenarios.push(result);
 		}
-		scenarios.push(result);
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
 	}
 	const all = scenarios.flatMap((s) => s.contracts);
 	const holed = all.filter((c) => c.variant === "holed");
@@ -372,14 +400,19 @@ interface ChildResult {
 }
 
 /** Run one attack in its own process; stdout and stderr are captured, never forwarded. */
-function runChild(dir: string, out: string, timeoutMs: number): Promise<ChildResult> {
+function runChild(
+	dir: string,
+	out: string,
+	timeoutMs: number,
+	specArgs: string[] = ["--no-spec"],
+): Promise<ChildResult> {
 	const args = cliArgs();
 	return new Promise((done) => {
 		let stderr = "";
 		let timedOut = false;
 		const child = spawn(
 			process.execPath,
-			[...args, "attack", dir, "--no-spec", "--json", "--out", out],
+			[...args, "attack", dir, ...specArgs, "--json", "--out", out],
 			{ stdio: ["ignore", "ignore", "pipe"] },
 		);
 		const timer = setTimeout(() => {

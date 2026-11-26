@@ -403,20 +403,27 @@ async function attackUnit(
 	// ArgRefs resolved against the varied assignment (a key derived from the secret).
 	// Such runs are marked `followed`; the finding's evidence counts them.
 	const hasRefs = prefix.some((p) => p.args.some((x) => x instanceof ArgRef));
-	const observe = async (a: Assignment, mode: "vary" | "fixed" = "vary"): Promise<Observation> => {
+	// Modes: "fixed" keeps the setup calls as found; "follow" lets them move with the
+	// input in one run (an input that cannot vary otherwise); "vary" tries fixed first.
+	// Every run (setup calls, probes, retries) counts against a hard cap per unit.
+	const cap = runs0 + opts.budget + 2000;
+	const observe = async (
+		a: Assignment,
+		mode: "vary" | "fixed" | "follow" = "vary",
+	): Promise<Observation> => {
+		if (runner.runs >= cap) return capped();
 		if (!circuit) return runner.observeConstructor(a);
-		const fixed = await runner.observeCall(circuit, a, prefix, base);
-		if (fixed.ok || mode === "fixed") return fixed;
 		const linked = linkPrefix(prefix, base.args, a.args);
-		if (linked !== prefix) {
-			const o = await runner.observeCall(circuit, a, linked, base);
-			if (o.ok) return { ...o, followed: true };
-		}
-		if (hasRefs) {
-			const o = await runner.observeCall(circuit, a, linked);
-			if (o.ok) return { ...o, followed: true };
-		}
-		return fixed;
+		const follow = async () => {
+			const o = await runner.observeCall(circuit, a, linked, hasRefs ? undefined : base);
+			return o.ok ? { ...o, followed: true } : o;
+		};
+		if (mode === "follow") return follow();
+		const fixed = await runner.observeCall(circuit, a, prefix, base);
+		if (fixed.ok || mode !== "vary" || (linked === prefix && !hasRefs)) return fixed;
+		if (runner.runs >= cap) return fixed;
+		const o = await follow();
+		return o.ok ? o : fixed;
 	};
 	const baseObs = await observe(base);
 	if (!baseObs.ok) {
@@ -453,9 +460,10 @@ async function attackUnit(
 	for (const h of hidden) {
 		if (h.entropy !== "secret") continue;
 		const alt = altSecret(h.leaf, leafValue(base, h), rnd);
-		// Masking is judged with the setup calls fixed: a secret that only moves the
-		// state the setup calls build must not count as hiding another input.
-		maskRuns.set(h.id, await observe(withLeaf(base, h, alt), "fixed"));
+		// Masking is judged with the setup calls fixed when they can stay fixed: a secret
+		// that only moves the state they build must not count as hiding another input. A
+		// secret the setup must follow (a member key) still masks what it is hashed with.
+		maskRuns.set(h.id, await observe(withLeaf(base, h, alt)));
 	}
 
 	const inputs: InputReport[] = [];
@@ -486,7 +494,7 @@ async function attackUnit(
 		}
 		let followed = 0;
 		const counted = async (a: Assignment) => {
-			const o = await observe(a, fixable ? "fixed" : "vary");
+			const o = await observe(a, fixable ? "fixed" : "follow");
 			if (o.followed) followed++;
 			return o;
 		};
@@ -504,6 +512,8 @@ async function attackUnit(
 			name,
 		);
 		// Runs that needed the setup calls to move with this input: say so with the finding.
+		// The setup calls then put values derived from the input on chain themselves, and
+		// a read of them back shows up in this call too; the reader should know.
 		if (followed > 0) for (const f of report.findings) f.evidence.setupFollowed = followed;
 		inputs.push(report);
 	}
@@ -620,6 +630,22 @@ async function splitWitnessAttack(
 		}
 		report.findings.push(finding);
 	}
+}
+
+/** The observation for a run the per-unit run cap did not allow. */
+function capped(): Observation {
+	return {
+		ok: false,
+		error: "run cap for this unit reached",
+		ops: [],
+		shape: "",
+		result: null,
+		calledInConstructor: new Set(),
+		calledInCircuit: new Set(),
+		witnessReads: {},
+		hashes: new Set(),
+		targetLog: [],
+	};
 }
 
 function skeleton(spec: InputSpec): Value {
