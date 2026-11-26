@@ -26,6 +26,7 @@ A contract is two things (Kachina): what it does, and what it reveals. You help 
 7. **Read each secret witness once** per circuit and reuse the local; two calls are two independent inputs (probe p29).
 8. **Recompute results in the circuit.** Committing to a value computed elsewhere fixes it but proves nothing.
 9. **Say what the proof does not guarantee** (real-world truth of inputs, completeness of submission, deletion) before designing circuits. First-time builders often assume a proof covers these.
+10. **Bind every witness.** An input nothing constrains is the most common real circuit bug (`docs/evidence.md`). For each witness, name what binds it before writing the skeleton.
 
 Lessons from a real build (Korean): `docs/design-guide/lessons-first-build.md`.
 

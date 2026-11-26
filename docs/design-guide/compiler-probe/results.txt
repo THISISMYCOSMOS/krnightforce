@@ -38,3 +38,4 @@ p27_transientCommit_const_rand | rc=0 |  |
 p28_blockTimeGte_witness | rc=255 | potential witness-value disclosure must be declared but is not: | the call to standard-library circuit blockTimeGte might disclose the lower bound of the time being checked
 p29_witness_read_twice | rc=0 |  | 
 p29b_witness_read_once | rc=0 |  | 
+p30_sealed_uint_range_nullifier | rc=0 |  | 

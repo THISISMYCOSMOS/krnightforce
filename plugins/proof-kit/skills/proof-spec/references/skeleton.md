@@ -66,3 +66,31 @@ Each `disclose()` must match an entry in `privacy-spec.json` (`mayReveal`). Reve
 assert(disclose(year <= 2006), "too young");   // reveals the fact, not the year
 ```
 Example: `proveHeldYear` in `club.compact`; the wrong way (branching on a disclosed value) is in `vote-branch`, fixed by storing a commitment: `ballots.insert(persistentCommit<Boolean>(choice(), ballot_nonce()));`.
+
+## 8. Bind every witness to something
+
+The most common real circuit mistake is an input nothing constrains (`docs/evidence.md`: 95 of 99 circuit bugs in the SNARK SoK). A witness is whatever the DApp returns. Every witness that changes a fact, a ledger write or an authorization must be checked against one of these: a commitment the issuer or operator wrote, ledger state, or a secret behind a stored key. In the design proposal (part 3), write for each witness what binds it. A witness with nothing to bind it is a design gap: stop and ask who vouches (criterion 10).
+
+```
+assert(credentials.lookup(disclose(id)) == claim_commitment(age, condition, nonce), "claim does not match");
+```
+Example: `verifyAdult` in `health-credential/fixed/credential.compact`.
+
+## 9. Check, then insert, for one-time actions
+
+A nullifier set only prevents replay if the circuit checks membership before inserting. Example: rule 4.
+
+## 10. Totals in `Uint`, bounds and state checked, fixed settings `sealed`
+
+`Field` arithmetic wraps around; `Uint` checks its range. Check amounts and the contract's state before using them, and mark settings that must never change `sealed`. All three compile with 0.36.0 (probe `p30_sealed_uint_range_nullifier`):
+
+```
+export sealed ledger fee_cap: Uint<32>;
+assert(active, "inactive");
+assert(a > 0 && a <= 1000, "amount out of range");
+total = disclose((total + a) as Uint<32>);
+```
+
+## Out of scope
+
+The skeleton rules cover the contract's own circuits. They do not address proof-system or verifier flaws, trusted setup, or compiler bugs; Compact's compiler generates the constraints, so Circom-specific mistakes (assigned but unconstrained signals, curve-specific templates) do not apply. See `docs/evidence.md`.

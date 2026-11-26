@@ -25,6 +25,8 @@ Also list the unavoidable leakage the user accepts (that a call happened, when, 
 
 ## 3. Building block per value
 
+For each witness, also write what binds it (an issuer commitment, ledger state, a secret behind a stored key). A witness with nothing to bind it is a design gap (`skeleton.md` rule 8).
+
 For each hidden value: the building block, why, and the pitfall it avoids.
 
 - e.g. age, condition code → `persistentCommit([age, condition], nonce)` with a fresh nonce per credential (criterion 4, 5). Pitfall: `persistentHash` compiles but anyone can hash ages 0–120 until one matches; this exact mistake appeared in a hackathon project.
