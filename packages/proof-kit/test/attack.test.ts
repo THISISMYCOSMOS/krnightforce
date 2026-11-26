@@ -249,5 +249,63 @@ describe("review fixes: relation source, parameterized witnesses, T2 on untestab
 		expect(input?.findings.map((f) => f.kind)).toEqual(["UNBOUND"]);
 		expect(r.summary).toMatchObject({ failures: 1, untestable: 0 });
 		expect(formatText(r)).toContain("witness:year (Uint<0..65536>): FAIL unbound [T2]");
+		// The base value 1990 had to come from the source's constants.
+		expect(r.setup.witnesses).toContain("year = 1990 (base value)");
 	}, 60_000);
+});
+
+describe("setup search: hash outputs as setup arguments, chains, base values", () => {
+	it("enrols the key a circuit derives from a secret with a helper that is not exported", async () => {
+		const r = await run("setup_hash_arg");
+		expect(r.setup.prefixes).toEqual({ act: ["enrol"] });
+		// The enrolled key follows the secret, so varying the secret still runs.
+		const act = r.units.find((u) => u.circuit === "act");
+		const secret = act?.inputs.find((i) => i.input === "witness:member_secret");
+		expect(secret?.status).toBe("tested");
+		expect(r.summary.untestable).toBe(0);
+	}, 120_000);
+
+	it("finds a constructor commitment, a three-call chain, a base argument and a base witness value", async () => {
+		const r = await run("setup_chain");
+		expect(r.setup.constructor).toBe("arg1=output #0 of reveal()");
+		expect(r.setup.prefixes.claim).toEqual(["open", "reveal", "enter"]);
+		expect(r.setup.args).toEqual({ claim: "0" });
+		expect(r.setup.witnesses).toContain("level = 500 (base value)");
+		const claim = r.units.find((u) => u.circuit === "claim");
+		expect(claim?.status).toBe("tested");
+		const level = claim?.inputs.find((i) => i.input === "witness:level");
+		expect(level?.findings.some((f) => f.attack === "T2" && f.failure)).toBe(true);
+	}, 120_000);
+});
+
+describe("setup calls stay fixed while an input is varied", () => {
+	it("still finds threshold leaks when a setup argument equals the witness's base value", async () => {
+		const spec = { path: "inline", spec: { mayReveal: [] }, ranges: new Map() };
+		const r = await attack(await loadCompiled(fixture("setup_bound_threshold")), { spec });
+		for (const circuit of ["check", "checkHigh"]) {
+			const fs = findings(r, circuit, "witness:score");
+			// The leak (a comparison with the stored threshold, or score > 100) is found...
+			expect(fs.some((f) => f.kind === "PARTIAL" && f.failure)).toBe(true);
+			// ...and the stored value is never reported as the score appearing verbatim.
+			expect(fs.some((f) => f.kind === "EXPOSED")).toBe(false);
+			expect(fs.every((f) => f.evidence.setupFollowed === undefined)).toBe(true);
+		}
+	}, 120_000);
+
+	it("records when the setup calls had to follow the input (a member key)", async () => {
+		const r = await run("setup_hash_arg");
+		const fs = findings(r, "act", "witness:member_secret");
+		expect(fs.length).toBeGreaterThan(0);
+		expect(fs.every((f) => typeof f.evidence.setupFollowed === "number")).toBe(true);
+	}, 120_000);
+});
+
+describe("A2 when the base value lies past the budget", () => {
+	it("recovers a threshold base value from the source at its natural position", async () => {
+		const r = await attack(await loadCompiled(fixture("a2_threshold")), { budget: 1000 });
+		expect(r.setup.witnesses).toContain("points = 5000 (base value)");
+		const f = findings(r, "record", "witness:points").find((x) => x.attack === "A2");
+		expect(f).toMatchObject({ kind: "RECOVERABLE", failure: true });
+		expect(f?.evidence).toMatchObject({ recovered: "5000", tried: 5001, ran: 1000 });
+	}, 120_000);
 });

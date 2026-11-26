@@ -14,16 +14,18 @@
 // limitations under the License.
 
 import {
+	ArgRef,
 	type Assignment,
 	type CircuitSpec,
 	type Compiled,
+	type Observation,
 	PK,
 	Runner,
 	type SetupCall,
 	type WitnessRelation,
 } from "./harness.js";
 import { type CType, typeToString } from "./types.js";
-import { type Value, baseLeafValue, leaves, prng, same, setLeaf } from "./values.js";
+import { type Value, baseLeafValue, leaves, prng, same, setLeaf, show } from "./values.js";
 
 /**
  * Zero-config setup search. Contracts often reject a call unless the deployment is
@@ -43,6 +45,19 @@ export interface Setup {
 	prefixes: Map<string, SetupCall[]>;
 	/** Witness relations the setup assumed, e.g. "owner_key = ownerKeyOf(owner_secret())". */
 	witnesses: string[];
+	/** Base argument values the search chose for a circuit whose defaults did not run. */
+	args: Map<string, Value[]>;
+	/** Base witness values chosen instead of the defaults, e.g. "points = 5000 (base value)". */
+	overrides: string[];
+	/** Runs the search itself made (calls, constructor observations, probes). */
+	searchRuns: number;
+}
+
+/** Hints for the search: numeric literals in the source (boundary values). */
+export interface SetupOptions {
+	constants?: bigint[];
+	/** Inclusive value ranges from the leakage description, by input id ("witness:x"). */
+	ranges?: Map<string, [bigint, bigint]>;
 }
 
 export function hashName(s: string): number {
@@ -165,21 +180,114 @@ interface Attempt {
 	label: string;
 	ok: Set<string>;
 	prefixes: Map<string, SetupCall[]>;
+	/** Base arguments chosen for circuits whose default arguments did not run. */
+	args: Map<string, Value[]>;
 	/** Circuits that still cannot run, with or without setup calls. */
 	missing: number;
 	/** Witnesses those circuits read before failing. */
 	reads: Set<string>;
+	/** The lone base run (error, hash outputs) of each circuit that still cannot run. */
+	lone: Map<string, Observation>;
+	/** For each circuit that still cannot run, the partial setups that got it furthest. */
+	hints: Map<string, Hint[]>;
+}
+
+/** A partial setup: setup calls and the circuit's arguments, with what the run did. */
+interface Hint {
+	prefix: SetupCall[];
+	args: Value[];
+	obs: Observation;
+}
+
+/** Whether a runner lets the circuit of a hint run, or fail differently. */
+async function moves(
+	runner: Runner,
+	circuit: CircuitSpec,
+	h: Hint,
+): Promise<"ok" | "moved" | "same"> {
+	const o = await runner.observeCall(circuit, { witnesses: {}, args: h.args }, h.prefix);
+	if (o.ok) return "ok";
+	return o.error !== h.obs.error ? "moved" : "same";
+}
+
+/**
+ * Whether relations (and overrides) let a still-missing circuit run after the setup
+ * calls that got it furthest before: a cheap screen before a full attempt.
+ */
+async function screen(
+	S: Search,
+	best: Attempt,
+	plan: CtorPlan[],
+	relations: WitnessRelation[],
+	overrides: Record<string, Value>,
+): Promise<boolean> {
+	const runner = new Runner(S.c, plan[0]?.plan, relations, overrides);
+	for (const [name, hs] of best.hints) {
+		for (const h of hs) if ((await moves(runner, byName(S, name), h)) === "ok") return true;
+	}
+	return false;
+}
+
+interface Search {
+	c: Compiled;
+	seed: number;
+	constants: bigint[];
+	ranges: Map<string, [bigint, bigint]>;
+	/** Runs allowed per missing circuit in the setup-call search. */
+	budget: number;
+	/** Most setup calls before the attacked one. */
+	depth: number;
+	/** Checks left for the constructor-value and base-value steps together. */
+	checks: { left: number };
 }
 
 /**
  * Pick the constructor plan under which the most units run, then setup calls for the
- * rest. If some circuits still cannot run, try making one witness a function of
- * another (greedily, up to three relations): a contract that stores
- * `ownerKeyOf(secret)` at registration and recomputes it later needs both to agree.
+ * rest. When circuits still cannot run, widen in steps, keeping a step only if fewer
+ * circuits are missing:
+ * 1. a constructor argument taken from a hash or commitment a failing circuit computes
+ *    (a commitment fixed at deployment and revealed later);
+ * 2. a base value for a numeric witness from the source's constants (a threshold);
+ * 3. one witness made a function of another (greedily, up to three relations): a
+ *    contract that stores `ownerKeyOf(secret)` and recomputes it later needs both to agree.
+ * Setup calls themselves are searched up to three deep (see `solve`).
  */
-export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
-	let best = await attempt(c, seed, ctorPlans(c), []);
+export async function chooseSetup(
+	c: Compiled,
+	seed: number,
+	options: SetupOptions = {},
+): Promise<Setup> {
+	const S: Search = {
+		c,
+		seed,
+		constants: options.constants ?? [],
+		ranges: options.ranges ?? new Map(),
+		budget: 200,
+		depth: 3,
+		checks: { left: 60 },
+	};
+	const runs0 = Runner.totalRuns;
+	let best = await attempt(S, ctorPlans(c), [], {});
+	let plan = ctorPlans(c).filter((p) => p.label === best.label);
 	const relations: WitnessRelation[] = [];
+	const overrides: Record<string, Value> = {};
+
+	// 1. Constructor arguments from values a failing circuit computes.
+	if (best.missing > 0 && plan.length > 0) {
+		const step = await ctorFromLogs(S, best, plan[0]);
+		if (step) {
+			best = step.a;
+			plan = [step.plan];
+		}
+	}
+	// 2. Base witness values that pass a check, greedily, at most two.
+	for (let i = 0; i < 2 && best.missing > 0; i++) {
+		const step = await witnessOverride(S, best, plan, relations, overrides);
+		if (!step) break;
+		overrides[step.name] = step.value;
+		best = step.a;
+	}
+	// 3. Witness relations.
 	while (best.missing > 0 && relations.length < 3) {
 		// Try sources the failing circuits read first: a member circuit that recomputes
 		// ownerKeyOf(owner_secret()) reads owner_secret, not the operator's secret.
@@ -187,7 +295,6 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 		const all = witnessRelations(c).sort(
 			(x, y) => Number(reads.has(y.source)) - Number(reads.has(x.source)),
 		);
-		const plan = ctorPlans(c).filter((p) => p.label === best.label);
 		// Two sources can both unblock the base runs when their default values happen to
 		// be equal (every secret Bytes<32> starts from the same value). So a relation must
 		// also show that the target follows the source: with the source changed, the newly
@@ -195,13 +302,18 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 		// (no other value to try) is a fallback; one that fails the check is dropped.
 		let step: { a: Attempt; r: WitnessRelation } | null = null;
 		let fallback: { a: Attempt; r: WitnessRelation } | null = null;
+		// Screening each relation with one setup call and a small budget is enough to see
+		// whether it unblocks anything; the chosen one is redone with the full search.
+		const quick: Search = { ...S, budget: 16, depth: 1 };
 		for (const r of all) {
 			// One relation per target, and no cycles through earlier relations.
 			if (relations.some((x) => x.target === r.target || x.source === r.target)) continue;
 			if (relations.some((x) => x.target === r.source)) continue;
-			const a = await attempt(c, seed, plan, [...relations, r]);
+			if (r.target in overrides) continue;
+			if (!(await screen(S, best, plan, [...relations, r], overrides))) continue;
+			const a = await attempt(quick, plan, [...relations, r], overrides);
 			if (a.missing >= best.missing) continue;
-			const verdict = await follows(c, seed, a, best, r);
+			const verdict = await follows(S, a, best, r);
 			if (verdict === false) continue;
 			if (verdict === null) {
 				if (a.missing < (fallback?.a.missing ?? best.missing)) fallback = { a, r };
@@ -213,7 +325,9 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 		step ??= fallback;
 		if (!step) break;
 		relations.push(step.r);
-		best = step.a;
+		// Redo the chosen relation with the full search budget.
+		const full = await attempt(S, plan, relations, overrides);
+		best = full.missing <= step.a.missing ? full : step.a;
 	}
 	best.runner.runs = 0;
 	return {
@@ -221,11 +335,14 @@ export async function chooseSetup(c: Compiled, seed: number): Promise<Setup> {
 		constructor: best.label,
 		prefixes: best.prefixes,
 		witnesses: relations.map((r) => `${r.target} = ${r.label}`),
+		args: best.args,
+		overrides: Object.entries(overrides).map(([k, v]) => `${k} = ${show(v)} (base value)`),
+		searchRuns: Runner.totalRuns - runs0,
 	};
 }
 
 function runnable(x: Attempt, name: string): boolean {
-	return x.ok.has(name) || x.prefixes.has(name);
+	return x.ok.has(name) || x.prefixes.has(name) || x.args.has(name);
 }
 
 /** Another value of the same type as `base`, or undefined when there is none to try. */
@@ -246,31 +363,30 @@ function otherValue(t: CType, base: Value, rnd: () => number): Value | undefined
 	return undefined;
 }
 
+const baseOf = (S: Search, circuit: CircuitSpec): Value[] =>
+	baseArgs(circuit, prng(unitSeed(S.seed, circuit.name)));
+
 /**
  * Whether the target of relation `r` really follows its source: run every circuit that
  * `r` made runnable with the source set to another value. True if all still run, false
  * if one fails, null if no other source value can be built.
  */
 async function follows(
-	c: Compiled,
-	seed: number,
+	S: Search,
 	a: Attempt,
 	before: Attempt,
 	r: WitnessRelation,
 ): Promise<boolean | null> {
-	const w = c.witnesses.find((x) => x.name === r.source);
+	const w = S.c.witnesses.find((x) => x.name === r.source);
 	if (!w) return null;
-	const alt = otherValue(w.type, a.runner.defaultWitness(r.source), prng(seed * 31 + 7));
+	const alt = otherValue(w.type, a.runner.defaultWitness(r.source), prng(S.seed * 31 + 7));
 	if (alt === undefined) return null;
-	const newly = c.circuits.filter((x) => runnable(a, x.name) && !runnable(before, x.name));
+	const newly = S.c.circuits.filter((x) => runnable(a, x.name) && !runnable(before, x.name));
 	if (newly.length === 0) return null;
 	for (const circuit of newly) {
 		const o = await a.runner.observeCall(
 			circuit,
-			{
-				witnesses: { [r.source]: alt },
-				args: baseArgs(circuit, prng(unitSeed(seed, circuit.name))),
-			},
+			{ witnesses: { [r.source]: alt }, args: a.args.get(circuit.name) ?? baseOf(S, circuit) },
 			a.prefixes.get(circuit.name) ?? [],
 		);
 		if (!o.ok) return false;
@@ -279,63 +395,318 @@ async function follows(
 }
 
 async function attempt(
-	c: Compiled,
-	seed: number,
+	S: Search,
 	plans: CtorPlan[],
 	relations: WitnessRelation[],
+	overrides: Record<string, Value>,
 ): Promise<Attempt> {
-	const base = (circuit: CircuitSpec): Assignment => ({
-		witnesses: {},
-		args: baseArgs(circuit, prng(unitSeed(seed, circuit.name))),
-	});
+	const { c } = S;
 	let best: { runner: Runner; label: string; ok: Set<string> } | null = null;
 	for (const p of plans) {
-		const runner = new Runner(c, p.plan, relations);
+		const runner = new Runner(c, p.plan, relations, overrides);
 		const ok = new Set<string>();
 		if ((await runner.observeConstructor({ witnesses: {}, args: [] })).ok) ok.add("<constructor>");
 		for (const circuit of c.circuits) {
-			if ((await runner.observeCall(circuit, base(circuit))).ok) ok.add(circuit.name);
+			if ((await runner.observeCall(circuit, { witnesses: {}, args: baseOf(S, circuit) })).ok)
+				ok.add(circuit.name);
 		}
 		if (!best || ok.size > best.ok.size) best = { runner, label: p.label, ok };
 		if (ok.size === c.circuits.length + 1) break;
 	}
 	const chosen = best as { runner: Runner; label: string; ok: Set<string> };
 	const prefixes = new Map<string, SetupCall[]>();
-	const ready = c.circuits.filter((x) => chosen.ok.has(x.name));
-	// One setup call first, then two (e.g. register a car, then move the club calendar).
-	const candidates: CircuitSpec[][] = [
-		...ready.map((s) => [s]),
-		...ready.flatMap((s) => ready.filter((t) => t !== s).map((t) => [s, t])),
-	];
-	// Setup arguments: the base values, then numbers at their maximum (a calendar or
-	// counter that must be past the caller's hidden value).
-	const atMax = (s: CircuitSpec, args: Value[]): Value[] =>
-		args.map((v, i) =>
-			s.args[i].type.kind === "uint" ? (s.args[i].type as { max: bigint }).max : v,
-		);
+	const args = new Map<string, Value[]>();
+	const lone = new Map<string, Observation>();
+	const hints = new Map<string, Hint[]>();
 	let missing = 0;
 	const reads = new Set<string>();
-	search: for (const circuit of c.circuits) {
+	for (const circuit of c.circuits) {
 		if (chosen.ok.has(circuit.name)) continue;
-		const lone = await chosen.runner.observeCall(circuit, base(circuit));
-		for (const w of lone.calledInCircuit) reads.add(w);
-		for (const seq of candidates) {
-			for (const variant of [false, true]) {
-				const prefix = seq.map((s) => {
-					const args = base(s).args;
-					return { circuit: s.name, args: variant ? atMax(s, args) : args };
-				});
-				if (variant && prefix.every((p, i) => same(p.args, base(seq[i]).args))) continue;
-				const o = await chosen.runner.observeCall(circuit, base(circuit), prefix);
+		const r = await solve(S, chosen.runner, circuit, reads);
+		if (r.found) {
+			if (r.prefix.length > 0) prefixes.set(circuit.name, r.prefix);
+			if (r.args) args.set(circuit.name, r.args);
+		} else {
+			missing++;
+			lone.set(circuit.name, r.lone);
+			hints.set(circuit.name, r.hints);
+		}
+	}
+	if (!chosen.ok.has("<constructor>")) missing++;
+	return { ...chosen, prefixes, args, missing, reads, lone, hints };
+}
+
+const isB32 = (t: CType) => t.kind === "bytes" && t.length === 32;
+const isNum = (t: CType) => t.kind === "uint" || t.kind === "field";
+
+/** Whether a raw hash/commitment output can stand in for a value of type `t`. */
+function fitsType(t: CType, v: unknown): boolean {
+	if (isB32(t)) return v instanceof Uint8Array && v.length === 32;
+	if (t.kind === "field") return typeof v === "bigint";
+	return false;
+}
+
+/**
+ * Candidate numeric values for an input: 0, 1, the source's constants and their
+ * neighbours, the max; within the leakage description's range for that input when it
+ * gives one (its bounds first).
+ */
+function numericCandidates(S: Search, t: CType, base: Value, id: string): bigint[] {
+	const range = S.ranges.get(id);
+	const lo = range ? range[0] : 0n;
+	const max = range ? range[1] : t.kind === "uint" ? t.max : null;
+	const out: bigint[] = [];
+	const add = (n: bigint) => {
+		if (n < lo || (max !== null && n > max) || n === base || out.includes(n)) return;
+		out.push(n);
+	};
+	if (range) {
+		add(range[0]);
+		add(range[1]);
+	}
+	add(0n);
+	add(1n);
+	for (const k of S.constants) {
+		add(k);
+		add(k + 1n);
+		add(k - 1n);
+	}
+	if (max !== null) add(max);
+	return out.slice(0, 40);
+}
+
+/**
+ * Variants of a setup call's arguments: the base values, numbers at their maximum, and
+ * for each 32-byte or field argument, a value the attacked circuit computes (its n-th
+ * hash or commitment output) or a function of a witness. The last two are ArgRefs,
+ * resolved per run so they follow the attacked assignment.
+ */
+function setupArgVariants(S: Search, s: CircuitSpec, targetLog: unknown[]): Value[][] {
+	const base = baseOf(S, s);
+	const out: Value[][] = [base];
+	const atMax = base.map((v, i) =>
+		s.args[i].type.kind === "uint" ? (s.args[i].type as { max: bigint }).max : v,
+	);
+	if (!atMax.every((v, i) => same(v, base[i]))) out.push(atMax);
+	s.args.forEach((spec, i) => {
+		const t = spec.type;
+		const put = (ref: ArgRef) => out.push(base.map((v, j) => (j === i ? ref : v)));
+		targetLog.slice(0, 8).forEach((v, k) => {
+			if (fitsType(t, v)) put(new ArgRef(`output #${k} of the attacked circuit`, { log: k }));
+		});
+		for (const w of S.c.witnesses) {
+			if (key(w.type) === key(t)) put(new ArgRef(`${w.name}()`, { witness: w.name, fn: (x) => x }));
+			for (const p of S.c.pureFns) {
+				if (key(p.arg) === key(w.type) && key(p.result) === key(t))
+					put(new ArgRef(`${p.name}(${w.name}())`, { witness: w.name, fn: p.fn }));
+			}
+		}
+	});
+	return out.slice(0, 24);
+}
+
+type Solved =
+	| { found: true; prefix: SetupCall[]; args?: Value[] }
+	| { found: false; lone: Observation; hints: Hint[] };
+
+/**
+ * Find a way to run one circuit: alone with other numeric arguments, then after up to
+ * three setup calls. A setup call is kept for extension when it ran and the attacked
+ * circuit then failed differently or computed more (progress), or at least the call
+ * changed state; failing setup calls are dropped. Bounded by `S.budget` runs.
+ */
+async function solve(
+	S: Search,
+	runner: Runner,
+	circuit: CircuitSpec,
+	reads: Set<string>,
+): Promise<Solved> {
+	const base = baseOf(S, circuit);
+	const lone = await runner.observeCall(circuit, { witnesses: {}, args: base });
+	for (const w of lone.calledInCircuit) reads.add(w);
+	// Every run counts against the budget, probes and retries included.
+	const start = Runner.totalRuns;
+	const spent = () => Runner.totalRuns - start >= S.budget;
+	// Other numeric values of the attacked circuit's own top-level arguments.
+	const argVariants: Value[][] = [];
+	circuit.args.forEach((spec, i) => {
+		if (!isNum(spec.type)) return;
+		for (const n of numericCandidates(S, spec.type, base[i], `arg:${spec.name}`))
+			argVariants.push(base.map((v, j) => (j === i ? n : v)));
+	});
+	type Node = { prefix: SetupCall[]; obs: Observation; progress: boolean };
+	let frontier: Node[] = [{ prefix: [], obs: lone, progress: true }];
+	// Partial setups that got the circuit further, deepest last: hints for the later
+	// steps (constructor values, base witness values, relations).
+	const progressed: Hint[] = [{ prefix: [], args: base, obs: lone }];
+	const fail = (): Solved => ({ found: false, lone, hints: progressed.slice(-6) });
+	for (let depth = 0; depth <= S.depth; depth++) {
+		for (const node of frontier.slice(0, 3)) {
+			for (const args of argVariants.slice(0, 16)) {
+				if (spent()) return fail();
+				const o = await runner.observeCall(circuit, { witnesses: {}, args }, node.prefix);
 				for (const w of o.calledInCircuit) reads.add(w);
-				if (o.ok) {
-					prefixes.set(circuit.name, prefix);
-					continue search;
+				if (!o.ok && o.error !== node.obs.error)
+					progressed.push({ prefix: node.prefix, args, obs: o });
+				if (o.ok)
+					return {
+						found: true,
+						prefix: await bindToWitnesses(S, runner, circuit, node.prefix, args),
+						args,
+					};
+			}
+		}
+		if (depth === S.depth) break;
+		const next: Node[] = [];
+		for (const node of frontier) {
+			for (const s of S.c.circuits) {
+				if (s === circuit) continue;
+				for (const sargs of setupArgVariants(S, s, node.obs.targetLog)) {
+					if (spent()) return fail();
+					const prefix = [...node.prefix, { circuit: s.name, args: sargs }];
+					const o = await runner.observeCall(circuit, { witnesses: {}, args: base }, prefix);
+					for (const w of o.calledInCircuit) reads.add(w);
+					if (o.ok)
+						return { found: true, prefix: await bindToWitnesses(S, runner, circuit, prefix, base) };
+					if ((o.error ?? "").startsWith("setup ")) continue;
+					const progress =
+						o.error !== node.obs.error || o.targetLog.length > node.obs.targetLog.length;
+					next.push({ prefix, obs: o, progress });
 				}
 			}
 		}
-		missing++;
+		// Keep the calls that made progress first; drop repeats of the same outcome.
+		const seen = new Set<string>();
+		frontier = next
+			.sort((x, y) => Number(y.progress) - Number(x.progress))
+			.filter((n) => {
+				const k = `${n.progress}|${n.obs.error}|${n.prefix.map((p) => p.circuit).join(",")}`;
+				if (seen.has(k)) return false;
+				seen.add(k);
+				return true;
+			})
+			.slice(0, 4);
+		for (const n of frontier)
+			if (n.progress) progressed.push({ prefix: n.prefix, args: base, obs: n.obs });
+		if (frontier.length === 0) break;
 	}
-	if (!chosen.ok.has("<constructor>")) missing++;
-	return { ...chosen, prefixes, missing, reads };
+	return fail();
+}
+
+/**
+ * A numeric setup argument that equals a witness's base value is often that witness in
+ * the real flow (an issuer records the salary the employee later proves). Make it follow
+ * the witness, so the attack can vary the witness without breaking the setup; keep the
+ * change only if the base run still passes.
+ */
+async function bindToWitnesses(
+	S: Search,
+	runner: Runner,
+	circuit: CircuitSpec,
+	prefix: SetupCall[],
+	base: Value[],
+): Promise<SetupCall[]> {
+	let cur = prefix;
+	for (let i = 0; i < cur.length; i++) {
+		const spec = byName(S, cur[i].circuit);
+		for (let j = 0; j < cur[i].args.length; j++) {
+			const v = cur[i].args[j];
+			const t = spec.args[j]?.type;
+			if (!t || !isNum(t) || v instanceof ArgRef) continue;
+			for (const w of S.c.witnesses) {
+				if (key(w.type) !== key(t) || !same(runner.defaultWitness(w.name), v)) continue;
+				const ref = new ArgRef(`${w.name}()`, { witness: w.name, fn: (x) => x });
+				const cand = cur.map((p, k) =>
+					k === i ? { circuit: p.circuit, args: p.args.map((x, m) => (m === j ? ref : x)) } : p,
+				);
+				if ((await runner.observeCall(circuit, { witnesses: {}, args: base }, cand)).ok) {
+					cur = cand;
+					break;
+				}
+			}
+		}
+	}
+	return cur;
+}
+
+const byName = (S: Search, name: string) =>
+	S.c.circuits.find((x) => x.name === name) as CircuitSpec;
+
+/**
+ * Constructor arguments from values a failing circuit computes: a contract that commits
+ * to a secret at deployment and checks the reveal later needs the constructor to receive
+ * exactly the commitment the reveal computes. Kept only if fewer circuits miss.
+ */
+async function ctorFromLogs(
+	S: Search,
+	best: Attempt,
+	plan: CtorPlan,
+): Promise<{ a: Attempt; plan: CtorPlan } | null> {
+	const types = S.c.constructorArgs.map((x) => x.type);
+	const tried = new Set<string>();
+	for (const [name, hs] of best.hints) {
+		const circuit = byName(S, name);
+		for (const h of hs) {
+			for (const [k, v] of h.obs.targetLog.slice(0, 6).entries()) {
+				for (let i = 0; i < types.length; i++) {
+					if (!fitsType(types[i], v) || tried.has(`${i}|${show(v)}`)) continue;
+					tried.add(`${i}|${show(v)}`);
+					const label = `arg${i + 1}=output #${k} of ${name}()`;
+					const p: CtorPlan = {
+						label: plan.label === "defaults" ? label : `${plan.label}, ${label}`,
+						plan: (a) => plan.plan(a).map((x, j) => (j === i ? v : x)),
+					};
+					// Cheap check first: does the circuit now get further from this hint?
+					if (S.checks.left-- <= 0) return null;
+					if ((await moves(new Runner(S.c, p.plan, [], {}), circuit, h)) === "same") continue;
+					const a = await attempt(S, [p], [], {});
+					// The first value that lets more circuits run is kept.
+					if (a.missing < best.missing) return { a, plan: p };
+				}
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * A base value for one numeric witness that lets more circuits run (points above a
+ * threshold). Cheap check on the missing circuits' lone runs first, then the full
+ * search. Kept only if fewer circuits miss.
+ */
+async function witnessOverride(
+	S: Search,
+	best: Attempt,
+	plan: CtorPlan[],
+	relations: WitnessRelation[],
+	overrides: Record<string, Value>,
+): Promise<{ name: string; value: Value; a: Attempt } | null> {
+	for (const w of S.c.witnesses) {
+		if (!best.reads.has(w.name) || !isNum(w.type) || w.name in overrides) continue;
+		for (const n of numericCandidates(
+			S,
+			w.type,
+			best.runner.defaultWitness(w.name),
+			`witness:${w.name}`,
+		)) {
+			const trial = { ...overrides, [w.name]: n };
+			const r = new Runner(S.c, plan[0]?.plan, relations, trial);
+			if (S.checks.left-- <= 0) return null;
+			let moved = false;
+			for (const [name, hs] of best.hints) {
+				for (const h of hs) {
+					if ((await moves(r, byName(S, name), h)) !== "same") {
+						moved = true;
+						break;
+					}
+				}
+				if (moved) break;
+			}
+			if (!moved) continue;
+			const a = await attempt(S, plan, relations, trial);
+			// The first value that lets more circuits run is kept.
+			if (a.missing < best.missing) return { name: w.name, value: n, a };
+		}
+	}
+	return null;
 }

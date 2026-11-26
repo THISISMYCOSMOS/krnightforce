@@ -1,0 +1,27 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Setup fixture: a member's key is a domain-tagged hash of their secret, computed by a
+// helper that is not an exported pure circuit. enrol() must receive exactly that key,
+// which the setup search can only take from the hash act() computes before its check.
+// The tag act() publishes depends on the secret, so the secret must stay testable.
+export ledger members: Set<Bytes<32>>;
+export ledger tags: Set<Bytes<32>>;
+
+witness member_secret(): Bytes<32>;
+
+circuit member_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "fixture:member"), sk]);
+}
+
+export circuit enrol(pk: Bytes<32>): [] {
+  members.insert(disclose(pk));
+}
+
+export circuit act(round: Uint<16>): [] {
+  const sk = member_secret();
+  assert(members.member(disclose(member_key(sk))), "not a member");
+  const tag = persistentHash<Vector<3, Bytes<32>>>([pad(32, "fixture:tag"), round as Field as Bytes<32>, sk]);
+  tags.insert(disclose(tag));
+}

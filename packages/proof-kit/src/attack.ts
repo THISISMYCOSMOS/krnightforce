@@ -14,14 +14,15 @@
 // limitations under the License.
 
 import { readFileSync } from "node:fs";
-import type {
-	Assignment,
-	CircuitSpec,
-	Compiled,
-	InputSpec,
-	Observation,
-	Runner,
-	SetupCall,
+import {
+	ArgRef,
+	type Assignment,
+	type CircuitSpec,
+	type Compiled,
+	type InputSpec,
+	type Observation,
+	type Runner,
+	type SetupCall,
 } from "./harness.js";
 import { chooseSetup, unitSeed } from "./setup.js";
 import { type LoadedSpec, covers } from "./spec.js";
@@ -127,7 +128,15 @@ export interface Report {
 	/** The leakage description used, or null (zero-config rule). */
 	spec: string | null;
 	/** How the engine reached a state where calls run (zero-config setup search). */
-	setup: { constructor: string; prefixes: Record<string, string[]>; witnesses: string[] };
+	setup: {
+		constructor: string;
+		prefixes: Record<string, string[]>;
+		witnesses: string[];
+		/** Base arguments the setup search chose for a circuit, shown as values. */
+		args: Record<string, string>;
+		/** Runs the setup search made before the attack. */
+		searchRuns: number;
+	};
 	units: UnitReport[];
 	pureCircuits: string[];
 	/**
@@ -274,7 +283,10 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		spec: options.spec ?? null,
 	};
 	const started = performance.now();
-	const setup = await chooseSetup(c, opts.seed);
+	const setup = await chooseSetup(c, opts.seed, {
+		constants: sourceConstants(c.sourceFile),
+		ranges: opts.spec?.ranges,
+	});
 	const runner = setup.runner;
 	const constants = sourceConstants(c.sourceFile);
 	const units: UnitReport[] = [];
@@ -291,6 +303,7 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 					constants,
 					opts,
 					setup.prefixes.get(circuit.name) ?? [],
+					setup.args.get(circuit.name),
 				),
 			);
 	}
@@ -318,7 +331,11 @@ export async function attack(c: Compiled, options: AttackOptions = {}): Promise<
 		spec: opts.spec?.path ?? null,
 		setup: {
 			constructor: setup.constructor,
-			witnesses: setup.witnesses,
+			witnesses: [...setup.witnesses, ...setup.overrides],
+			searchRuns: setup.searchRuns,
+			args: Object.fromEntries(
+				[...setup.args].map(([k, v]) => [k, v.map((x) => show(x)).join(", ")]),
+			),
 			prefixes: Object.fromEntries(
 				[...setup.prefixes].map(([k, v]) => [k, v.map((x) => x.circuit)]),
 			),
@@ -344,6 +361,7 @@ async function attackUnit(
 	constants: bigint[],
 	opts: Opts,
 	prefix: SetupCall[],
+	argBase?: Value[],
 ): Promise<UnitReport> {
 	const t0 = performance.now();
 	const runs0 = runner.runs;
@@ -373,12 +391,40 @@ async function attackUnit(
 			}
 			base.args.push(v);
 		});
+		// Arguments the setup search chose because the defaults did not run.
+		if (argBase) base.args = [...argBase];
 	}
 
-	const observe = (a: Assignment) =>
-		circuit
-			? runner.observeCall(circuit, a, linkPrefix(prefix, base.args, a.args))
-			: runner.observeConstructor(a);
+	// The setup calls stay as found by default: their arguments do not move with the
+	// input being varied, and ArgRefs resolve against the base assignment. Moving them
+	// could hide a leak (a stored threshold that follows the secret it is compared
+	// with). Only when that run fails, the setup calls follow: first arguments that
+	// passed the attacked call's base values (an id registered then looked up), then
+	// ArgRefs resolved against the varied assignment (a key derived from the secret).
+	// Such runs are marked `followed`; the finding's evidence counts them.
+	const hasRefs = prefix.some((p) => p.args.some((x) => x instanceof ArgRef));
+	// Modes: "fixed" keeps the setup calls as found; "follow" lets them move with the
+	// input in one run (an input that cannot vary otherwise); "vary" tries fixed first.
+	// Every run (setup calls, probes, retries) counts against a hard cap per unit.
+	const cap = runs0 + opts.budget + 2000;
+	const observe = async (
+		a: Assignment,
+		mode: "vary" | "fixed" | "follow" = "vary",
+	): Promise<Observation> => {
+		if (runner.runs >= cap) return capped();
+		if (!circuit) return runner.observeConstructor(a);
+		const linked = linkPrefix(prefix, base.args, a.args);
+		const follow = async () => {
+			const o = await runner.observeCall(circuit, a, linked, hasRefs ? undefined : base);
+			return o.ok ? { ...o, followed: true } : o;
+		};
+		if (mode === "follow") return follow();
+		const fixed = await runner.observeCall(circuit, a, prefix, base);
+		if (fixed.ok || mode !== "vary" || (linked === prefix && !hasRefs)) return fixed;
+		if (runner.runs >= cap) return fixed;
+		const o = await follow();
+		return o.ok ? o : fixed;
+	};
 	const baseObs = await observe(base);
 	if (!baseObs.ok) {
 		return {
@@ -414,28 +460,64 @@ async function attackUnit(
 	for (const h of hidden) {
 		if (h.entropy !== "secret") continue;
 		const alt = altSecret(h.leaf, leafValue(base, h), rnd);
+		// Masking is judged with the setup calls fixed when they can stay fixed: a secret
+		// that only moves the state they build must not count as hiding another input. A
+		// secret the setup must follow (a member key) still masks what it is hashed with.
 		maskRuns.set(h.id, await observe(withLeaf(base, h, alt)));
 	}
 
 	const inputs: InputReport[] = [];
 	for (const h of hidden) {
-		inputs.push(
-			await attackLeaf(
-				h,
-				base,
-				baseObs,
-				observe,
-				maskRuns,
-				hidden,
-				constants,
-				opts,
-				rnd,
-				circuit === null,
-				name,
-			),
+		// An input that can vary with the setup calls fixed is attacked that way only: a
+		// setup call that moved with it would write the varied value to the ledger and the
+		// attacked call would read it back (a false exposure), or hide a comparison with
+		// it. Only an input that cannot vary at all with them fixed (a key the setup must
+		// register, a salary the record must hold) lets them follow.
+		let fixable = prefix.length === 0;
+		if (!fixable) {
+			const b = leafValue(base, h);
+			const all = samples(h.leaf, h.label, b, constants, prng(unitSeed(opts.seed, h.id))).filter(
+				(v) => !same(v, b),
+			);
+			// Spread over the samples (low, high, middle...): a check like `s >= stored`
+			// rejects one side only.
+			const n = all.length;
+			const tries = [...new Set([0, n - 1, n >> 1, 1, n - 2, n >> 2])]
+				.filter((i) => i >= 0 && i < n)
+				.map((i) => all[i]);
+			for (const v of tries) {
+				if ((await observe(withLeaf(base, h, v), "fixed")).ok) {
+					fixable = true;
+					break;
+				}
+			}
+		}
+		let followed = 0;
+		const counted = async (a: Assignment) => {
+			const o = await observe(a, fixable ? "fixed" : "follow");
+			if (o.followed) followed++;
+			return o;
+		};
+		const report = await attackLeaf(
+			h,
+			base,
+			baseObs,
+			counted,
+			maskRuns,
+			hidden,
+			constants,
+			opts,
+			rnd,
+			circuit === null,
+			name,
 		);
+		// Runs that needed the setup calls to move with this input: say so with the finding.
+		// The setup calls then put values derived from the input on chain themselves, and
+		// a read of them back shows up in this call too; the reader should know.
+		if (followed > 0) for (const f of report.findings) f.evidence.setupFollowed = followed;
+		inputs.push(report);
 	}
-	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd);
+	if (circuit) await splitWitnessAttack(c, base, baseObs, observe, inputs, rnd, prefix.length > 0);
 	return {
 		circuit: name,
 		status: "tested",
@@ -460,6 +542,7 @@ async function splitWitnessAttack(
 	observe: (a: Assignment) => Promise<Observation>,
 	inputs: InputReport[],
 	rnd: () => number,
+	hasSetup: boolean,
 ): Promise<void> {
 	for (const [key, reads] of Object.entries(baseObs.witnessReads)) {
 		// Reads are counted per witness and arguments: a witness that takes an argument
@@ -491,16 +574,24 @@ async function splitWitnessAttack(
 			}
 		}
 		const accepted: { read: string; label: string; value: string }[] = [];
-		for (const at of ["rest", "first"] as const) {
-			for (const alt of alts) {
-				const o = await observe({ ...base, split: { key, value: alt.value, at } });
-				if (o.ok) {
-					accepted.push({
-						read: at === "first" ? "read 1" : `reads 2..${reads}`,
-						label: alt.label,
-						value: show(alt.value),
+		// Without and then with the setup calls reading the split value: an attacker's
+		// earlier state (a ticket bought with one number) can match the unbound read.
+		for (const setupToo of [false, true]) {
+			if (setupToo && (accepted.length > 0 || !hasSetup)) break;
+			for (const at of ["rest", "first"] as const) {
+				for (const alt of alts) {
+					const o = await observe({
+						...base,
+						split: { key, value: alt.value, at, setup: setupToo },
 					});
-					break;
+					if (o.ok) {
+						accepted.push({
+							read: `${at === "first" ? "read 1" : `reads 2..${reads}`}${setupToo ? " and the setup calls" : ""}`,
+							label: alt.label,
+							value: show(alt.value),
+						});
+						break;
+					}
 				}
 			}
 		}
@@ -512,7 +603,7 @@ async function splitWitnessAttack(
 			attack: "T2",
 			onChain: true,
 			failure: true,
-			detail: `the call reads it ${reads} times and still succeeds when ${accepted[0].read === "read 1" ? "the first read" : "the later reads"} return ${accepted[0].value} instead of ${show(baseValue)}: each read is a separate input. Read it once and pass the value`,
+			detail: `the call reads it ${reads} times and still succeeds when ${accepted[0].read.startsWith("read 1") ? "the first read" : "the later reads"}${accepted[0].read.endsWith("setup calls") ? " and the setup calls" : ""} return ${accepted[0].value} instead of ${show(baseValue)}: each read is a separate input. Read it once and pass the value`,
 			evidence: { reads, accepted },
 			derived: null,
 			disclosure: null,
@@ -539,6 +630,22 @@ async function splitWitnessAttack(
 		}
 		report.findings.push(finding);
 	}
+}
+
+/** The observation for a run the per-unit run cap did not allow. */
+function capped(): Observation {
+	return {
+		ok: false,
+		error: "run cap for this unit reached",
+		ops: [],
+		shape: "",
+		result: null,
+		calledInConstructor: new Set(),
+		calledInCircuit: new Set(),
+		witnessReads: {},
+		hashes: new Set(),
+		targetLog: [],
+	};
 }
 
 function skeleton(spec: InputSpec): Value {
@@ -707,8 +814,14 @@ async function attackLeaf(
 				f.kind = "RECOVERABLE";
 				f.attack = f.where === "path" ? "A5" : "A2";
 				f.failure = f.onChain;
-				f.detail = `recovered the hidden value ${show(r.value)} after ${r.tried} candidates`;
-				f.evidence = { recovered: show(r.value), tried: r.tried };
+				f.detail =
+					r.ran === undefined
+						? `recovered the hidden value ${show(r.value)} after ${r.tried} candidates`
+						: `recovered the hidden value ${show(r.value)} at position ${r.tried} of the enumeration (no collision in the first ${r.ran} candidates)`;
+				f.evidence =
+					r.ran === undefined
+						? { recovered: show(r.value), tried: r.tried }
+						: { recovered: show(r.value), tried: r.tried, ran: r.ran };
 			} else {
 				f.detail =
 					h.entropy === "secret"
@@ -796,13 +909,17 @@ function derivedVia(
  */
 function linkPrefix(prefix: SetupCall[], baseArgs: Value[], args: Value[]): SetupCall[] {
 	if (prefix.length === 0) return prefix;
-	return prefix.map((p) => ({
+	let changed = false;
+	const out = prefix.map((p) => ({
 		circuit: p.circuit,
 		args: p.args.map((v) => {
 			const j = baseArgs.findIndex((b) => same(b, v));
-			return j >= 0 ? args[j] : v;
+			if (j < 0 || same(args[j], v)) return v;
+			changed = true;
+			return args[j];
 		}),
 	}));
+	return changed ? out : prefix;
 }
 
 /** Values lo..hi (inclusive) from the leakage description, most of the budget at most. */
@@ -827,8 +944,8 @@ async function recover(
 	sampled: Value[],
 	sampledObs: { v: Value; o: Observation }[],
 	range?: [bigint, bigint],
-): Promise<Map<string, { value: Value; tried: number; exact: boolean }>> {
-	const out = new Map<string, { value: Value; tried: number; exact: boolean }>();
+): Promise<Map<string, { value: Value; tried: number; exact: boolean; ran?: number }>> {
+	const out = new Map<string, { value: Value; tried: number; exact: boolean; ran?: number }>();
 	const target = leafValue(base, h);
 	// If the samples already cover the whole domain, the observation pins the value down.
 	if (h.entropy === "enumerable") {
@@ -842,12 +959,14 @@ async function recover(
 	const want = new Map(keys.map((k) => [k, valueAt(baseObs, baseObs, k)]));
 	const numeric = h.leaf.type.kind === "uint" || h.leaf.type.kind === "field";
 	const pool = range && numeric ? rangeValues(range, budget) : candidates(h.leaf, h.label, budget);
+	let reached = false;
 	for (const cand of pool) {
 		tried++;
 		if (same(cand, target)) {
 			// Trying the true value always matches; count it only as a try, the match
 			// below would be trivially true. Keep searching for an earlier collision.
 			for (const k of keys) if (!out.has(k)) out.set(k, { value: cand, tried, exact: true });
+			reached = true;
 			break;
 		}
 		const o = await observe(withLeaf(base, h, cand));
@@ -857,6 +976,20 @@ async function recover(
 				out.set(k, { value: cand, tried, exact: false });
 		}
 		if (out.size === keys.length) break;
+	}
+	// The base value can lie past the budget (the setup search may pick a threshold from
+	// the source, e.g. 5000). The attacker's enumeration still reaches it at its natural
+	// position in the same order; the candidates before the budget showed no collision.
+	if (!reached && numeric && out.size < keys.length && typeof target === "bigint") {
+		const t = h.leaf.type;
+		const max = t.kind === "uint" ? t.max : null;
+		let pos: bigint | null = null;
+		if (range) {
+			if (target >= range[0] && target <= range[1]) pos = target - range[0] + 1n;
+		} else if (target >= 0n && (max === null || target <= max)) pos = target + 1n;
+		if (pos !== null)
+			for (const k of keys)
+				if (!out.has(k)) out.set(k, { value: target, tried: Number(pos), exact: true, ran: tried });
 	}
 	return out;
 }
