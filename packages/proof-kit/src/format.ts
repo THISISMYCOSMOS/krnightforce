@@ -61,7 +61,7 @@ export function formatText(r: Report): string {
 						: f.disclosure === "spec"
 							? `public (allowed by spec) ${f.kind.toLowerCase()}`
 							: f.evidence.setupWrote
-								? `setup-written ${f.kind.toLowerCase()} (not a failure)`
+								? `${LABEL[f.kind]} (equals a setup-written value: check)`
 								: LABEL[f.kind];
 				const where =
 					f.kind === "UNBOUND"

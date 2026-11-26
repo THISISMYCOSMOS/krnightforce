@@ -337,7 +337,7 @@ describe("verdicts rest on runs that happened", () => {
 		expect(fs.some((x) => x.kind === "PARTIAL")).toBe(true);
 	}, 120_000);
 
-	it("does not report the value a following setup call wrote as an exposure", async () => {
+	it("annotates, but does not hide, a difference equal to a setup-written value", async () => {
 		const r = await run("setup_window");
 		const unit = r.units.find((u) => u.circuit === "echo");
 		const input = unit?.inputs.find((i) => i.input === "witness:score");
@@ -345,16 +345,18 @@ describe("verdicts rest on runs that happened", () => {
 		const exposed = (input?.findings ?? []).filter((x) => x.kind === "EXPOSED");
 		expect(exposed.length).toBeGreaterThan(0);
 		for (const x of exposed) {
-			expect(x.failure).toBe(false);
 			expect(x.evidence.setupWrote).toBe(true);
-			expect(x.detail).toContain("the setup call wrote this value");
+			expect(x.detail).toContain("equals what a following setup call wrote");
 		}
-		// With a spec that hides everything it still is not a failure.
+		// The engine cannot tell which cell wrote it, so the verdict is not hidden:
+		// with a spec that hides everything it fails, annotated.
 		const spec = { path: "inline", spec: { mayReveal: [] }, ranges: new Map() };
 		const s = await attack(await loadCompiled(fixture("setup_window")), { spec });
 		const e = s.units
 			.find((u) => u.circuit === "echo")
 			?.inputs.find((i) => i.input === "witness:score");
-		expect((e?.findings ?? []).filter((x) => x.kind === "EXPOSED" && x.failure)).toEqual([]);
+		const failing = (e?.findings ?? []).filter((x) => x.kind === "EXPOSED" && x.failure);
+		expect(failing.length).toBeGreaterThan(0);
+		expect(failing.every((x) => x.evidence.setupWrote)).toBe(true);
 	}, 120_000);
 });

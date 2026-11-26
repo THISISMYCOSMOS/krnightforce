@@ -653,6 +653,7 @@ async function splitWitnessAttack(
 			}
 		}
 		const accepted: { read: string; label: string; value: string }[] = [];
+		let capped = 0;
 		// Without and then with the setup calls reading the split value: an attacker's
 		// earlier state (a ticket bought with one number) can match the unbound read.
 		for (const setupToo of [false, true]) {
@@ -663,6 +664,7 @@ async function splitWitnessAttack(
 						...base,
 						split: { key, value: alt.value, at, setup: setupToo },
 					});
+					if (o.capped) capped++;
 					if (o.ok) {
 						accepted.push({
 							read: `${at === "first" ? "read 1" : `reads 2..${reads}`}${setupToo ? " and the setup calls" : ""}`,
@@ -674,7 +676,18 @@ async function splitWitnessAttack(
 				}
 			}
 		}
-		if (accepted.length === 0) continue;
+		if (accepted.length === 0) {
+			// Split runs refused by the run cap did not happen: no UNBOUND is not a pass.
+			if (capped > 0) {
+				const id = `witness:${name}`;
+				const r = inputs.find((i) => i.input === id || i.input.startsWith(`${id}.`));
+				if (r?.findings.every((f) => !f.failure)) {
+					r.status = "untestable";
+					r.reason = `${r.reason ? `${r.reason}; ` : ""}T2: run cap reached before every split value ran (${capped} refused)`;
+				}
+			}
+			continue;
+		}
 		const finding: Finding = {
 			kind: "UNBOUND",
 			where: "value",
@@ -936,10 +949,10 @@ async function attackLeaf(
 	for (const f of report.findings) {
 		decide(f, h.id, unit, opts.spec);
 		if (f.evidence.setupWrote) {
-			// The difference is the value a following setup call wrote, read back.
-			f.failure = false;
-			f.disclosure = null;
-			f.detail = `the setup call wrote this value (${f.detail})`;
+			// The difference equals a value a following setup call wrote. It may be that
+			// value read back, or a real leak of the same value: the engine cannot tell
+			// which cell wrote it, so the verdict stands and the finding is annotated.
+			f.detail = `${f.detail}; the value equals what a following setup call wrote, so it may be that value read back: check by hand`;
 		}
 		f.criteria = criteriaFor(f);
 	}
