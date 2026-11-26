@@ -300,12 +300,61 @@ describe("setup calls stay fixed while an input is varied", () => {
 	}, 120_000);
 });
 
-describe("A2 when the base value lies past the budget", () => {
-	it("recovers a threshold base value from the source at its natural position", async () => {
-		const r = await attack(await loadCompiled(fixture("a2_threshold")), { budget: 1000 });
-		expect(r.setup.witnesses).toContain("points = 5000 (base value)");
-		const f = findings(r, "record", "witness:points").find((x) => x.attack === "A2");
-		expect(f).toMatchObject({ kind: "RECOVERABLE", failure: true });
-		expect(f?.evidence).toMatchObject({ recovered: "5000", tried: 5001, ran: 1000 });
+describe("verdicts rest on runs that happened", () => {
+	it("reports a base value past the budget as not recovered, and recovers it once the budget reaches it", async () => {
+		const small = await attack(await loadCompiled(fixture("a2_threshold")), { budget: 1000 });
+		expect(small.setup.witnesses).toContain("points = 5000 (base value)");
+		const f = findings(small, "record", "witness:points").find((x) => x.location === "op 1");
+		expect(f).toMatchObject({ kind: "TAG", failure: false });
+		expect(f?.detail).toContain("lies beyond them");
+		const big = await attack(await loadCompiled(fixture("a2_threshold")), { budget: 6000 });
+		const g = findings(big, "record", "witness:points").find((x) => x.attack === "A2");
+		expect(g).toMatchObject({ kind: "RECOVERABLE", failure: true });
+		expect(g?.evidence).toMatchObject({ recovered: "5000", tried: 5001 });
+	}, 120_000);
+
+	it("never reports a far Uint<64> base value (10^12) as recovered", async () => {
+		const r = await attack(await loadCompiled(fixture("a2_far")), { budget: 1000 });
+		const fs = findings(r, "record", "witness:points");
+		expect(fs.some((x) => x.kind === "RECOVERABLE")).toBe(false);
+		expect(fs.some((x) => x.detail.includes("lies beyond them"))).toBe(true);
+	}, 120_000);
+
+	it("reports inputs cut short by the run cap as untestable, never as a pass", async () => {
+		const r = await attack(await loadCompiled(fixture("vault")), { runCap: 20 });
+		const reg = r.units.find((u) => u.circuit === "register");
+		const pin = reg?.inputs.find((i) => i.input === "witness:secret_pin");
+		expect(pin).toMatchObject({ status: "untestable" });
+		expect(pin?.reason).toMatch(/run cap reached/);
+		const salt = reg?.inputs.find((i) => i.input === "witness:pin_salt");
+		expect(salt?.reason).toMatch(/run cap reached/);
+		expect(salt?.reason).not.toMatch(/needs a scenario/);
+	}, 120_000);
+
+	it("finds a leak inside a narrow window above a stored value", async () => {
+		const r = await run("setup_window");
+		const fs = findings(r, "window", "witness:score");
+		expect(fs.some((x) => x.kind === "PARTIAL")).toBe(true);
+	}, 120_000);
+
+	it("does not report the value a following setup call wrote as an exposure", async () => {
+		const r = await run("setup_window");
+		const unit = r.units.find((u) => u.circuit === "echo");
+		const input = unit?.inputs.find((i) => i.input === "witness:score");
+		expect(input?.reason).toContain("setup calls following this input");
+		const exposed = (input?.findings ?? []).filter((x) => x.kind === "EXPOSED");
+		expect(exposed.length).toBeGreaterThan(0);
+		for (const x of exposed) {
+			expect(x.failure).toBe(false);
+			expect(x.evidence.setupWrote).toBe(true);
+			expect(x.detail).toContain("the setup call wrote this value");
+		}
+		// With a spec that hides everything it still is not a failure.
+		const spec = { path: "inline", spec: { mayReveal: [] }, ranges: new Map() };
+		const s = await attack(await loadCompiled(fixture("setup_window")), { spec });
+		const e = s.units
+			.find((u) => u.circuit === "echo")
+			?.inputs.find((i) => i.input === "witness:score");
+		expect((e?.findings ?? []).filter((x) => x.kind === "EXPOSED" && x.failure)).toEqual([]);
 	}, 120_000);
 });

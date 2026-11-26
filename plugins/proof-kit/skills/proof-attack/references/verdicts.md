@@ -19,6 +19,12 @@ Return values go to the caller (the DApp or calling contract), not on chain: the
 
 `status: "untestable"` is not a kind. A unit is untestable when its base run fails (the reason is the error); an input is untestable when every varied run fails or its type cannot be built (opaque types, contract references). Untestable is never a pass; it is gray in the map.
 
+Verdicts rest only on runs that happened:
+
+- **Run cap.** Each unit has a hard cap on runs (budget + 2000 by default, setup calls, probes and retries included). A run the cap refuses never happened. If the cap cut an input's samples or its recovery short and no failure was found from the runs that did happen, the input is untestable with the reason "run cap reached". If a failure was found, it stays, with `evidence.capped`.
+- **Recovery position.** A2 reports `RECOVERABLE` only when the true value was reached among the candidates that actually ran. A base value past them (a threshold from the source, a large number with no spec range) is "not recovered within N candidates (the value lies beyond them)", never recovered.
+- **Follow mode.** Setup calls normally stay fixed while an input varies. Only an input that cannot vary with them fixed (probed with spread samples, values next to the base, the source constants and their offsets, the spec range bounds) is attacked with the setup calls following it. Such an input carries the note "tested with setup calls following this input; leaks through the setup-written value cannot be seen". A difference that is exactly the value the following setup call wrote is that write read back, not a leak: `failure: false`, `evidence.setupWrote`.
+
 ## Failure rule
 
 A failure is leakage outside the leakage description (`docs/design-guide.md`, chapter 5). Each finding also carries:

@@ -1,0 +1,16 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Review fixture: the circuit only runs for p >= 10^12, so the setup search picks 10^12
+// from the source as the base value. No spec range: an enumeration from 0 never gets
+// there, so the hash must be reported "not recovered", never RECOVERABLE.
+export ledger digests: Set<Bytes<32>>;
+
+witness points(): Uint<64>;
+
+export circuit record(): [] {
+  const p = points();
+  assert(p >= 1000000000000, "not enough points");
+  digests.insert(disclose(persistentHash<Uint<64>>(p)));
+}

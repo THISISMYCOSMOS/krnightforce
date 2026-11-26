@@ -89,6 +89,11 @@ export interface Observation {
 	 * with the varied input (linked arguments or ArgRefs resolved against it).
 	 */
 	followed?: boolean;
+	/**
+	 * Set when the per-unit run cap refused this run: it never happened, so it is
+	 * neither a rejection by the contract nor a missing collision.
+	 */
+	capped?: boolean;
 }
 
 /**

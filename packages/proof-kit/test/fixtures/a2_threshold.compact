@@ -4,8 +4,8 @@ import CompactStandardLibrary;
 
 // Review fixture: the circuit only runs for points >= 5000, so the setup search picks
 // 5000 from the source as the base value. With a small budget (1000) the enumeration
-// does not reach it; recovery must still report the true value as RECOVERABLE, not
-// "not recovered" and not a wrong candidate.
+// does not reach it: the verdict is "not recovered" (the value lies beyond the
+// candidates that ran), never a wrong candidate. With a budget past 5000 it is recovered.
 export ledger digests: Set<Bytes<32>>;
 
 witness points(): Uint<32>;

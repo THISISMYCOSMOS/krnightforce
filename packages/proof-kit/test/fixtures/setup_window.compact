@@ -1,0 +1,34 @@
+pragma language_version >= 0.22;
+
+import CompactStandardLibrary;
+
+// Review fixtures for follow mode.
+// - window(): score must lie in a narrow window above the stored value; whether it is in
+//   the upper half leaks. The leak must be found, or the input must carry the follow note.
+// - echo(): score must equal the stored value, so the setup call has to follow it; the
+//   attacked call then reads back what the setup wrote. That is not a leak of echo().
+export ledger stored: Uint<32>;
+export ledger upper: Boolean;
+export ledger echoes: Counter;
+
+witness score(): Uint<32>;
+
+export circuit register(n: Uint<32>): [] {
+  stored = disclose(n);
+}
+
+export circuit window(): [] {
+  assert(stored != 0, "not registered");
+  const lo = stored;
+  const s = score();
+  assert(s >= lo, "below the window");
+  assert(s <= lo + 10, "above the window");
+  upper = disclose(s > lo + 5);
+}
+
+export circuit echo(): [] {
+  assert(stored != 0, "not registered");
+  const s = score();
+  assert(s == stored, "not the stored score");
+  echoes.increment(1);
+}

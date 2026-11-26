@@ -60,7 +60,9 @@ export function formatText(r: Report): string {
 						? `public (declared by disclose) ${f.kind.toLowerCase()}`
 						: f.disclosure === "spec"
 							? `public (allowed by spec) ${f.kind.toLowerCase()}`
-							: LABEL[f.kind];
+							: f.evidence.setupWrote
+								? `setup-written ${f.kind.toLowerCase()} (not a failure)`
+								: LABEL[f.kind];
 				const where =
 					f.kind === "UNBOUND"
 						? f.location
